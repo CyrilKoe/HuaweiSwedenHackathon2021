@@ -31,6 +31,11 @@ struct DAG{
     struct dependency * firstDependency;
 };
 
+void initialize(int whichDag);
+
+void add_task_to_list(int whichDag, int taskID, int executionTime, int taskType);
+void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transferTime);
+
 extern int dagsCount; // total number of DAGs (0 indexed in array "input")
 extern struct DAG * input[N];
 

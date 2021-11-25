@@ -12,5 +12,6 @@ struct ProcessorSchedule{
 
 extern struct ProcessorSchedule output[numberOfProcessors];
 
+void scheduler();
 
 #endif
