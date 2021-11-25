@@ -33,6 +33,9 @@ build:
 debug: CXXFLAGS += -DDEBUG -g
 debug: all
 
+run: all
+	$(APP_DIR)/$(TARGET)
+
 clean:
 	-@rm -rvf $(OBJ_DIR)/*
 	-@rm -rvf $(APP_DIR)/*

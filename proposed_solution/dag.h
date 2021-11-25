@@ -39,4 +39,7 @@ void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transfe
 extern int dagsCount; // total number of DAGs (0 indexed in array "input")
 extern struct DAG * input[N];
 
+void print_dag_tasks(int whichDag);
+void print_dag_dependencies(int whichDag);
+
 #endif
