@@ -12,9 +12,26 @@
 struct DAG * input[N];
 int dagsCount = 0; // total number of DAGs (0 indexed in array "input")
 
+
 /////////////////////////
 // CREATE FUNCTIONS /////
 /////////////////////////
+
+task_t *new_task_t() {
+    task_t *result = malloc(sizeof(task_t));
+    result->num_parents = 0;
+    result->num_sons = 0;
+    memset(result->sons, 0x0, sizeof(dependancy_t *)*tasksPerGraph);
+    memset(result->parents, 0x0, sizeof(dependancy_t *)*tasksPerGraph);
+    return result;
+}
+
+dependancy_t *new_dependancy_t() {
+    dependancy_t *result = malloc(sizeof(dependancy_t));
+    result->beforeTask = NULL;
+    result->afterTask = NULL;
+    return result;
+}
 
 void initialize(int whichDag){
     input[whichDag] = malloc(sizeof(struct DAG));
@@ -29,12 +46,12 @@ void initialize(int whichDag){
 void add_task_to_list(int whichDag, int taskID, int executionTime, int taskType){  
     input[whichDag]->tasksCount++;
     if(input[whichDag]->lastTask == NULL){
-        input[whichDag]->listOfTasks = malloc(sizeof(struct task));
+        input[whichDag]->listOfTasks = new_task_t();
         input[whichDag]->lastTask = input[whichDag]->listOfTasks;
         input[whichDag]->firstTask = input[whichDag]->lastTask;
     }
     else{
-        input[whichDag]->lastTask->next = malloc(sizeof(struct task));
+        input[whichDag]->lastTask->next = new_task_t();
         input[whichDag]->lastTask = input[whichDag]->lastTask->next;
     }
     input[whichDag]->lastTask->taskID = taskID;
@@ -47,12 +64,12 @@ void add_task_to_list(int whichDag, int taskID, int executionTime, int taskType)
 void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transferTime){
     
     if(input[whichDag]->lastDependency == NULL){
-        input[whichDag]->listOfDependencies = malloc(sizeof(struct dependency));
+        input[whichDag]->listOfDependencies = malloc(sizeof(dependancy_t));
         input[whichDag]->lastDependency = input[whichDag]->listOfDependencies;
         input[whichDag]->firstDependency = input[whichDag]->lastDependency;
     }
     else{
-        input[whichDag]->lastDependency->next = malloc(sizeof(struct dependency));
+        input[whichDag]->lastDependency->next = malloc(sizeof(dependancy_t));
         input[whichDag]->lastDependency = input[whichDag]->lastDependency->next;
     }
     input[whichDag]->lastDependency->beforeID = beforeID;
@@ -69,7 +86,7 @@ void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transfe
 
 
 void print_dag_tasks(int whichDag){ // "whichDag" is index of DAG in array "input"
-    struct task * current = input[whichDag]->firstTask;
+    task_t * current = input[whichDag]->firstTask;
     while(current != NULL){
         printf("%d ", current->taskID);
         current = current->next;
@@ -78,7 +95,7 @@ void print_dag_tasks(int whichDag){ // "whichDag" is index of DAG in array "inpu
 }
 
 void print_dag_dependencies(int whichDag){ // "whichDag" is index of DAG in array "input"
-    struct dependency * current = input[whichDag]->firstDependency;
+    dependancy_t * current = input[whichDag]->firstDependency;
     while(current != NULL){
         printf("FROM: %d TO: %d COST: %d\n", current->beforeID, current->afterID, current->transferTime);
         current = current->next;

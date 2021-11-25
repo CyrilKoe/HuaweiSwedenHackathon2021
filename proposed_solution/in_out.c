@@ -13,27 +13,27 @@
 #include <time.h>
 
 // auxiliary structures for output function (you dont have to read them)
-struct TaskWithDeadline{
+struct taskWithDeadline{
     int taskId;
     int dagDeadline;
 };
 
-struct TaskWithFinishTime{
+struct taskWithFinishTime{
     int taskId;
     int finishTime;
 };
 
 int cmp_aux(const void * arg11, const void * arg22){
-    struct TaskWithDeadline *arg1 = (struct TaskWithDeadline *)arg11;
-    struct TaskWithDeadline *arg2 = (struct TaskWithDeadline *)arg22;
+    struct taskWithDeadline *arg1 = (struct taskWithDeadline *)arg11;
+    struct taskWithDeadline *arg2 = (struct taskWithDeadline *)arg22;
     if((arg1->taskId) < (arg2->taskId)) return -1;
     if((arg1->taskId) == (arg2->taskId)) return 0;
     return 1;
 }
 
 int cmp_aux2(const void * arg11, const void * arg22){
-    struct TaskWithFinishTime *arg1 = (struct TaskWithFinishTime *)arg11;
-    struct TaskWithFinishTime *arg2 = (struct TaskWithFinishTime *)arg22;
+    struct taskWithFinishTime *arg1 = (struct taskWithFinishTime *)arg11;
+    struct taskWithFinishTime *arg2 = (struct taskWithFinishTime *)arg22;
     if((arg1->taskId) < (arg2->taskId)) return -1;
     if((arg1->taskId) == (arg2->taskId)) return 0;
     return 1;
@@ -50,12 +50,12 @@ void printer_function(char * filename, clock_t begin, clock_t end){
     }
     double worstMakespan = 0;
     for(int i=0;i<dagsCount;i++){
-        struct task * current = input[i]->firstTask;
+        task_t * current = input[i]->firstTask;
         while(current != NULL){
             worstMakespan += current->executionTime;
             current = current->next;
         }
-        struct dependency * dep = input[i]->firstDependency;
+        dependancy_t * dep = input[i]->firstDependency;
         while(dep != NULL){
             worstMakespan += dep->transferTime;
             dep = dep->next;
@@ -89,13 +89,13 @@ void printer_function(char * filename, clock_t begin, clock_t end){
         taskNumber += input[i]->tasksCount;
     }
 
-    struct TaskWithDeadline table1[N];
-    struct TaskWithFinishTime table2[N];
+    struct taskWithDeadline table1[N];
+    struct taskWithFinishTime table2[N];
     int done = 0;
     for(int i=0;i<dagsCount;i++){
-        struct task * now = input[i]->listOfTasks;
+        task_t * now = input[i]->listOfTasks;
         while(now != NULL){
-            struct TaskWithDeadline current;
+            struct taskWithDeadline current;
             current.taskId = now->taskID;
             current.dagDeadline = input[i]->deadlineTime;
             table1[done++] = current;
@@ -105,15 +105,15 @@ void printer_function(char * filename, clock_t begin, clock_t end){
     done = 0;
     for(int i=0;i<numberOfProcessors;i++){
         for(int j=0;j<output[i].numberOfTasks;j++){
-            struct TaskWithFinishTime current;
+            struct taskWithFinishTime current;
             current.taskId = output[i].taskIDs[j];
             current.finishTime = output[i].startTime[j] + output[i].exeTime[j];
             table2[done++] = current;
         }
     }
 
-    qsort(table1, taskNumber, sizeof(struct TaskWithDeadline), cmp_aux);
-    qsort(table2, taskNumber, sizeof(struct TaskWithFinishTime), cmp_aux2);
+    qsort(table1, taskNumber, sizeof(struct taskWithDeadline), cmp_aux);
+    qsort(table2, taskNumber, sizeof(struct taskWithFinishTime), cmp_aux2);
 
     int missedDeadlines = 0;
     for(int i=0;i<taskNumber;i++){
