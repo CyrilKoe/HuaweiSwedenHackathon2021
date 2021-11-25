@@ -20,6 +20,7 @@ $(OBJ_DIR)/%.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@ $(LDFLAGS)
 
 $(APP_DIR)/$(TARGET): $(OBJECTS)
+	ln -s ../testcases testcases || true
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $(APP_DIR)/$(TARGET) $^ $(LDFLAGS)
 
