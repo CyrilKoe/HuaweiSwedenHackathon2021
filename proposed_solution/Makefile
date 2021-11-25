@@ -1,12 +1,37 @@
-NAME = edge-impulse-standalone
+CC       := gcc
+CFLAGS   := -Wall -MD -MP -g
+LDFLAGS  := -ljson-c -lm
+BUILD    := ./build
+OBJ_DIR  := $(BUILD)/objects
+APP_DIR  := $(BUILD)/apps
+TARGET   := App
+INCLUDE  := -I.
 
-CC ?= gcc
+SRC      := $(wildcard *.c)
 
-CFLAGS += -Wall -g
-LDFLAGS += -ljson-c -lm
+OBJECTS  := $(SRC:%.c=$(OBJ_DIR)/%.o)
 
-CSOURCES = $(wildcard proposed_solution/*.c)
-COBJECTS := $(patsubst %.c,%.o,$(CSOURCES))
+all: build $(APP_DIR)/$(TARGET)
 
-app: ${COBJECTS}
-	$(C) $(COBJECTS) -o app.out $(LDFLAGS)
+-include $(subst .o,.d,$(OBJECTS))
+
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@ $(LDFLAGS)
+
+$(APP_DIR)/$(TARGET): $(OBJECTS)
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -o $(APP_DIR)/$(TARGET) $^ $(LDFLAGS)
+
+.PHONY: all build clean debug release
+
+build:
+	@mkdir -p $(APP_DIR)
+	@mkdir -p $(OBJ_DIR)
+
+debug: CXXFLAGS += -DDEBUG -g
+debug: all
+
+clean:
+	-@rm -rvf $(OBJ_DIR)/*
+	-@rm -rvf $(APP_DIR)/*
