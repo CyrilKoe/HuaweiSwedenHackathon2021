@@ -6,34 +6,36 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <string.h> 
+#include <string.h>
 #include <math.h>
 
-struct DAG * input[N];
+struct DAG *input[N];
 int dagsCount = 0; // total number of DAGs (0 indexed in array "input")
-
 
 /////////////////////////
 // CREATE FUNCTIONS /////
 /////////////////////////
 
-task_t *new_task_t() {
+task_t *new_task_t()
+{
     task_t *result = malloc(sizeof(task_t));
     result->num_parents = 0;
     result->num_sons = 0;
-    memset(result->sons, 0x0, sizeof(dependancy_t *)*tasksPerGraph);
-    memset(result->parents, 0x0, sizeof(dependancy_t *)*tasksPerGraph);
+    memset(result->sons, 0x0, sizeof(dependancy_t *) * tasksPerGraph);
+    memset(result->parents, 0x0, sizeof(dependancy_t *) * tasksPerGraph);
     return result;
 }
 
-dependancy_t *new_dependancy_t() {
+dependancy_t *new_dependancy_t()
+{
     dependancy_t *result = malloc(sizeof(dependancy_t));
     result->beforeTask = NULL;
     result->afterTask = NULL;
     return result;
 }
 
-void initialize(int whichDag){
+void initialize(int whichDag)
+{
     input[whichDag] = malloc(sizeof(struct DAG));
     input[whichDag]->listOfTasks = NULL;
     input[whichDag]->listOfDependencies = NULL;
@@ -43,14 +45,17 @@ void initialize(int whichDag){
     input[whichDag]->firstTask = NULL;
 }
 
-void add_task_to_list(int whichDag, int taskID, int executionTime, int taskType){  
+void add_task_to_list(int whichDag, int taskID, int executionTime, int taskType)
+{
     input[whichDag]->tasksCount++;
-    if(input[whichDag]->lastTask == NULL){
+    if (input[whichDag]->lastTask == NULL)
+    {
         input[whichDag]->listOfTasks = new_task_t();
         input[whichDag]->lastTask = input[whichDag]->listOfTasks;
         input[whichDag]->firstTask = input[whichDag]->lastTask;
     }
-    else{
+    else
+    {
         input[whichDag]->lastTask->next = new_task_t();
         input[whichDag]->lastTask = input[whichDag]->lastTask->next;
     }
@@ -61,14 +66,17 @@ void add_task_to_list(int whichDag, int taskID, int executionTime, int taskType)
     return;
 }
 
-void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transferTime){
-    
-    if(input[whichDag]->lastDependency == NULL){
+void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transferTime)
+{
+
+    if (input[whichDag]->lastDependency == NULL)
+    {
         input[whichDag]->listOfDependencies = malloc(sizeof(dependancy_t));
         input[whichDag]->lastDependency = input[whichDag]->listOfDependencies;
         input[whichDag]->firstDependency = input[whichDag]->lastDependency;
     }
-    else{
+    else
+    {
         input[whichDag]->lastDependency->next = malloc(sizeof(dependancy_t));
         input[whichDag]->lastDependency = input[whichDag]->lastDependency->next;
     }
@@ -79,24 +87,38 @@ void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transfe
     return;
 }
 
-
 /////////////////////////
 // PRINT FUNCTIONS //////
 /////////////////////////
 
+void print_task(task_t *currentTask)
+{
+    printf("%d : [execution] %d , [num_sons] %d , [num_parents] %d , [max_remaining_time] %d\n", currentTask->taskID, currentTask->executionTime, currentTask->num_sons, currentTask->num_parents, currentTask->remainingTime);
+}
 
-void print_dag_tasks(int whichDag){ // "whichDag" is index of DAG in array "input"
-    task_t * current = input[whichDag]->firstTask;
-    while(current != NULL){
-        printf("%d ", current->taskID);
+void print_dag_tasks(int whichDag, bool extended)
+{ // "whichDag" is index of DAG in array "input"
+    task_t *current = input[whichDag]->firstTask;
+    while (current != NULL)
+    {
+        if (extended)
+        {
+            print_task(current);
+        }
+        else
+        {
+            printf("%d ", current->taskID);
+        }
         current = current->next;
     }
     printf("\n");
 }
 
-void print_dag_dependencies(int whichDag){ // "whichDag" is index of DAG in array "input"
-    dependancy_t * current = input[whichDag]->firstDependency;
-    while(current != NULL){
+void print_dag_dependencies(int whichDag)
+{ // "whichDag" is index of DAG in array "input"
+    dependancy_t *current = input[whichDag]->firstDependency;
+    while (current != NULL)
+    {
         printf("FROM: %d TO: %d COST: %d\n", current->beforeID, current->afterID, current->transferTime);
         current = current->next;
     }
