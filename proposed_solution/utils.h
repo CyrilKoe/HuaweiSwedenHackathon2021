@@ -7,4 +7,6 @@
 #define historyOfProcessor 4 
 #define ll long long int
 
+#define MAX(a, b) (a > b) ? a : b
+
 #endif

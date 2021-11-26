@@ -14,6 +14,7 @@ void link_dependancies_to_tasks(int whichDag);
 int build_max_start_time(int whichDag, task_t *currentTask);
 void add_roots_to_dag(int whichDag);
 task_t **ordered_tasks_worst_start(int num_tasks, int dagsCount);
+bool first_proc_available();
 
 void scheduler()
 {
@@ -30,17 +31,24 @@ void scheduler()
     }
 
     // Sort all the tasks of all dag by their maximum acceptable start time
-
     task_t **ordered_tasks = ordered_tasks_worst_start(num_tasks, dagsCount);
 
     // Just verify the sort
-
     int last_worst_start = 0;
-    for (int i = 0; i < num_tasks; i++) {
-        assert(last_worst_start < ordered_tasks[i]->worstStart);
-        //printf("%i ", ordered_tasks[i]->worstStart);
+    for (int i = 0; i < num_tasks; i++)
+    {
+        assert(last_worst_start <= ordered_tasks[i]->worstStart);
+        last_worst_start = ordered_tasks[i]->worstStart;
     }
-    //printf("\n");
+
+    // Easy attribution
+    for (int i = 0; i < num_tasks; i++)
+    {
+        int procID = first_proc_available();
+        int last_task_size = output[procID].numberOfTasks;
+        // Attribute it with lookup history and idk
+        
+    }
 }
 
 // O(n*m) fill the pointers between dependancies and tasks
@@ -71,6 +79,39 @@ void link_dependancies_to_tasks(int whichDag)
         }
         currentTask = currentTask->next;
     }
+}
+
+bool lookup_history(int procID, task_t *task)
+{
+    int history = 0;
+    for (int j = output[procID].numberOfTasks - 1; j >= 0; j--)
+    {
+        if (output[procID].tasks[j]->taskType == task->taskType)
+            return true;
+        history++;
+        if (history == historyOfProcessor)
+            return false;
+    }
+    return false;
+}
+
+bool first_proc_available()
+{
+    int min = 1<<30;
+    int min_id = 0;
+    for (int procID = 0; procID < numberOfProcessors; procID++)
+    {
+        int last_task = output[procID].numberOfTasks-1;
+        if(last_task == -1) {
+            return procID;
+        }
+        int last_execution_end = output[procID].startTime[last_task]+output[procID].exeTime[last_task];
+        if(last_execution_end < min) {
+            min_id = procID;
+            min = last_execution_end;
+        }
+    }
+    return min_id;
 }
 
 // Create a fake node to have a unique root in each dag
@@ -107,47 +148,47 @@ void add_roots_to_dag(int whichDag)
 // O(n) computes the remaining time until dag termination
 int build_max_start_time(int whichDag, task_t *currentTask)
 {
-    int upstream_max_time = 0;
-
     if (currentTask->num_sons == 0)
     {
         // Last task just has his worst execution time
-        upstream_max_time = currentTask->executionTime;
-        currentTask->remainingTime = upstream_max_time;
-        currentTask->worstStart = input[whichDag]->deadlineTime - currentTask->remainingTime;
+        int upstream_time = currentTask->executionTime;
+        if (upstream_time > currentTask->remainingTime)
+        {
+            currentTask->remainingTime = upstream_time;
+            currentTask->worstStart = input[whichDag]->deadlineTime - currentTask->remainingTime;
+        }
         // Pass it to the task before
-        return upstream_max_time;
+        return currentTask->remainingTime;
     }
 
-    int tmp_max_time = 0;
     for (int i = 0; i < currentTask->num_sons; i++)
     {
         // Tasks before first removes the worst communication time
-        tmp_max_time = build_max_start_time(whichDag, currentTask->sons[i]->afterTask) + currentTask->sons[i]->transferTime;
-        // Keep the shortest time as the worst
-        if (tmp_max_time > upstream_max_time)
-            upstream_max_time = tmp_max_time;
+        int upstream_time = build_max_start_time(whichDag, currentTask->sons[i]->afterTask) + currentTask->sons[i]->transferTime;
+        // Keep the longest time as the worst
+        if (upstream_time > currentTask->remainingTime)
+        {
+            currentTask->remainingTime = upstream_time;
+            currentTask->worstStart = input[whichDag]->deadlineTime - currentTask->remainingTime;
+        }
     }
-    // Remove its own execution time
-    upstream_max_time = upstream_max_time + currentTask->executionTime;
-    currentTask->remainingTime = upstream_max_time;
-    currentTask->worstStart = input[whichDag]->deadlineTime - currentTask->remainingTime;
+
     // Pass it to the task before
-    return upstream_max_time;
+    return currentTask->remainingTime;
 }
 
 // Quick sort algo
 void swap(task_t **a, task_t **b)
 {
-    task_t * t = *a;
+    task_t *t = *a;
     *a = *b;
     *b = t;
 }
 
 // Quick sort algo
-int partition(task_t ** arr, int low, int high)
+int partition(task_t **arr, int low, int high)
 {
-    task_t * pivot = arr[high];
+    task_t *pivot = arr[high];
     int i = (low - 1);
     for (int j = low; j <= high - 1; j++)
     {
@@ -162,7 +203,7 @@ int partition(task_t ** arr, int low, int high)
 }
 
 // Quick sort algo
-void quickSort(task_t ** arr, int low, int high)
+void quickSort(task_t **arr, int low, int high)
 {
     if (low < high)
     {
@@ -172,6 +213,7 @@ void quickSort(task_t ** arr, int low, int high)
     }
 }
 
+// O(nlog(n))
 task_t **ordered_tasks_worst_start(int num_tasks, int dagsCount)
 {
     task_t **result = malloc(sizeof(task_t *) * num_tasks);
@@ -190,7 +232,7 @@ task_t **ordered_tasks_worst_start(int num_tasks, int dagsCount)
 
     assert(ptr == num_tasks);
 
-    quickSort(result, 0, num_tasks-1);
+    quickSort(result, 0, num_tasks - 1);
 
     return result;
 }
