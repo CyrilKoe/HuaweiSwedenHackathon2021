@@ -68,7 +68,7 @@ void scheduler()
         for (int j = 0; j < dagsCount; j++) {
             if (!input[j]->is_scheduled && input[j]->arrivalTime < min_arrival_time) {
                 min_arrival_time = input[i]->arrivalTime;
-                chosen_dag = i;
+                chosen_dag = j;
             }
         }
 

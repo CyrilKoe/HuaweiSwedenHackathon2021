@@ -34,7 +34,19 @@ debug: CXXFLAGS += -DDEBUG -g
 debug: all
 
 run: all
-	$(APP_DIR)/$(TARGET)
+	$(APP_DIR)/$(TARGET) 1
+	$(APP_DIR)/$(TARGET) 2
+	$(APP_DIR)/$(TARGET) 3
+	$(APP_DIR)/$(TARGET) 4
+	$(APP_DIR)/$(TARGET) 5
+	$(APP_DIR)/$(TARGET) 6
+	$(APP_DIR)/$(TARGET) 7
+	$(APP_DIR)/$(TARGET) 8
+	$(APP_DIR)/$(TARGET) 9
+	$(APP_DIR)/$(TARGET) 10
+	$(APP_DIR)/$(TARGET) 11
+	$(APP_DIR)/$(TARGET) 12
+	
 
 clean:
 	-@rm -rvf $(OBJ_DIR)/*
