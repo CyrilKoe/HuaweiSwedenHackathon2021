@@ -15,7 +15,8 @@ typedef struct task{
     struct task *next;
     // Added //
     int whichDag;
-    int remainingTime; // gives the worst time until the end of this dDAG
+    int remainingTime; // gives the worst time until the end of this DAG
+    int worstStart; // gives the worst time to start
     int num_sons;
     struct dependancy *sons[tasksPerGraph];
     int num_parents;
