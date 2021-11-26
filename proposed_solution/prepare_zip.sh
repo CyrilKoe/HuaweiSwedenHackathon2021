@@ -12,10 +12,11 @@ cp ../utils.h .
 
 codingame-merge -w . -main main.cpp -o merge.c 
 
-cp ../amswer*.csv .
+cp ../answer*.csv .
 
 rm *.cpp *.h 
 
 cd ..
 
 zip -r submission.zip submission 
+rm -rf submission

@@ -77,14 +77,25 @@ void scheduler()
         input[chosen_dag]->is_scheduled = true;
 
         for(int task_idx = 0; task_idx < input[chosen_dag]->tasksCount; task_idx++) {
+
             task_t *task_to_add = ordered_tasks_topo[task_idx];
+            
             int last_task_scheduled = output[chosen_PN].numberOfTasks;
-            int start_time = output[chosen_PN].startTime[last_task_scheduled-1] + output[chosen_PN].exeTime[last_task_scheduled-1];
+            int start_time;
+            if (last_task_scheduled != 0) {
+                start_time = output[chosen_PN].startTime[last_task_scheduled-1] + output[chosen_PN].exeTime[last_task_scheduled-1];
+            } else {
+                start_time = 0;
+            }
+            if (start_time < input[chosen_dag]->arrivalTime) {
+                start_time = input[chosen_dag]->arrivalTime;
+            }
             output[chosen_PN].startTime[last_task_scheduled] = start_time;
             output[chosen_PN].exeTime[last_task_scheduled] = task_to_add->executionTime;
             output[chosen_PN].taskIDs[last_task_scheduled] = task_to_add->taskID;
             output[chosen_PN].numberOfTasks++;
             assert(last_task_scheduled < N);
+        
         }
     }
 
