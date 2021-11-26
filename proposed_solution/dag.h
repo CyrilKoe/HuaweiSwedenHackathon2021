@@ -48,7 +48,7 @@ struct DAG{
     dependancy_t * firstDependency;
     // Added //
     task_t * root; // Fake node representing a root
-
+    bool is_scheduled; // Used for full dag scheduling
 };
 
 task_t* find_task_in_dag(int taskID, int whichDag);
@@ -61,6 +61,7 @@ void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transfe
 extern int dagsCount; // total number of DAGs (0 indexed in array "input")
 extern struct DAG * input[N];
 
+void print_task(task_t *currentTask);
 void print_dag_tasks(int whichDag, bool extended);
 void print_dag_dependencies(int whichDag);
 

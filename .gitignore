@@ -1,0 +1,7 @@
+*build*
+*.out
+*.csv
+testcases
+out.txt
+.vscode
+.DS_Store
