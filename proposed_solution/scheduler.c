@@ -16,6 +16,9 @@ int build_max_start_time(int whichDag, task_t *currentTask);
 void add_roots_to_dag(int whichDag);
 task_t **ordered_tasks_criteria(int num_tasks, int whichDag, int (*criteria)(task_t *));
 int first_proc_available();
+int compute_estimation_completion_time(int numProc, int whichDag);
+bool is_ready(task_t* task);
+bool schedule_task(tas_t* task_to_add, int PN_Id, int current_time);
 
 ///// CRITERIAS ////
 int get_remaining_time(task_t *task) {
@@ -47,18 +50,14 @@ void scheduler()
         
     }
 
+    full_dag_solution();
 
-    for (int dagIdx = 0; dagIdx < dagsCount; dagIdx++) {
-        //printf("dag number %d with exec time %d\n", dagIdx, compute_max_dag_execution_time(dagIdx));
-        
-        task_t **ordered_tasks_topo = ordered_tasks_criteria(input[dagIdx]->tasksCount, dagIdx, &get_remaining_time);
-        //printf("Dag number %d topo order of %d tasks: ", dagIdx, input[dagIdx]->tasksCount);
-        for (int j = 0; j < input[dagIdx]->tasksCount; j++) {
-            //printf("%d ", ordered_tasks_topo[j]->taskID); 
-        }
-        //printf("\n");
-    }
+    // find an idle PN and ask it to schedule the DAG
+    
+}
 
+// First solution
+void full_dag_solution() {
     // Until all dags are passed    
     for (int i = 0; i < dagsCount; i++) {
         // Find the first DAG available
@@ -93,16 +92,154 @@ void scheduler()
                 start_time = input[chosen_dag]->arrivalTime;
             }
             output[chosen_PN].startTime[last_task_scheduled] = start_time;
-            output[chosen_PN].exeTime[last_task_scheduled] = task_to_add->executionTime;
+            output[chosen_PN].exeTime[last_task_scheduled] = compute_actual_execution_time(chosen_PN, task_to_add);
             output[chosen_PN].taskIDs[last_task_scheduled] = task_to_add->taskID;
+            output[chosen_PN].tasks[last_task_scheduled] = task_to_add;
             output[chosen_PN].numberOfTasks++;
             assert(last_task_scheduled < N);
-        
         }
     }
+}
 
-    // find an idle PN and ask it to schedule the DAG
+void second_solution() {
+    /*
+        for every dag, assign a number of processors needed, lets call this x
+        then, DFS with x nodes walking in the graph, they share a queue and try to pick tasks without paying communication 
+    */
     
+    // compute array of arrival times 
+    int arrival_time = 0; 
+    int *arrival_times = malloc(sizeof(int)* dagsCount);
+    int n_arrival_times = 0; 
+    for (int i = 0; i < dagsCount; i++) {
+        arrival_time = input[i]->arrivalTime;
+        for (int j = 0; j< n_arrival_times; j++) {
+            if (arrival_time == arrival_times[j]) {
+                break;
+            }
+        }
+        arrival_times[n_arrival_times] = arrival_time;
+        n_arrival_times++;
+    }
+    
+    int current_time = 0;
+    int stop_time = 0;
+    // Until all dags are passed    
+    for (int i = 0; i < dagsCount; i++) {
+        // Find the first DAG available
+    
+        int chosen_dag = -1;
+        int min_max_start_time = INT_MAX;
+
+        for (int j = 0; j < dagsCount; j++) {
+            if(intput[j]->arrivalTime > current_time)
+                continue;
+
+            int max_start_time = input[j]->deadlineTime + intput[j]->arrivalTime - compute_max_dag_execution_time(j);
+            if (!input[j]->is_scheduled && max_start_time < min_max_start_time) {
+                min_max_start_time = max_start_time;
+                chosen_dag = j;
+            }
+        }
+        
+
+        int nProcsAllocated = 0;
+        while(compute_estimation_completion_time(nProcsAllocated, whichDag) > input[chosen_dag]->arrivalTime + input[chosen_dag]->deadlineTime) {
+            nProcsAllocated++;
+        }
+
+
+        // schedule tasks between procs = DFS 
+        task_t **queue_tasks_to_explore = malloc(sizeof(task_t*) * input[chosen_dag]->tasksCount);
+        task_t **tasks_per_PN = malloc(sizeof(task_t*) * nProcsAllocated);
+        int start_index_queue = -1;
+        int queue_size = 0;
+        // find a topological order for the DAG we want to schedule
+        task_t **ordered_tasks_topo = ordered_tasks_criteria(input[chosen_dag]->tasksCount, chosen_dag, &get_remaining_time);
+
+        
+        // enqueue nProcsAllocatedNodes so that all PN start with a node 
+        for (int i = 0; i < PN_Ids; i++) { 
+            // more tyasks than nPNsallocated ofc
+            queue_tasks_to_explore[start_index_queue++] = ordered_tasks_topo[i]; //enqueue 
+            queue_size++;
+        }
+        
+        
+        free(ordered_tasks_topo);
+        free(queue_tasks_to_explore);
+    }
+}
+
+void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore, int *start_index_queue, int *queue_size, 
+                                                            task_t **tasks_per_PN, int stop_time) {
+    // as long as there is only one path, we move forward for every PN
+    
+    for (int i = 0; i < PN_Ids; i++) {
+        task_t *current_task =  tasks_per_PN[i];
+        int PN_Id = PN_Ids[i];
+        // TODO CURRENT TIME LIE AU PARENT EN CAS DE DEADLOCK
+        int current_time = output[PN_Id].startTime[output[PN_Id].numberOfTasks] + output[PN_Id].exeTime[output[PN_Id].numberOfTasks];
+        schedule_task(current_task, PN_Id, current_time);
+
+        int num_sons = current_task->num_sons;
+
+        int sons_scheduled = 0;
+        int sons_not_ready = 0;
+        int no_time_for_this_son = 0;
+        bool *sons_runnable = malloc(sizeof(bool) * num_sons); // list of sons, true if runnable
+        int sons_not_runnable; 
+        int first_schedulable = 0;
+        for (int j = 0; j < num_sons; j++) {
+
+            if (tasks_per_PN[i]->sons[j]->afterTask->is_scheduled) {
+                sons_scheduled++;
+            } else if (current_task->sons[j]->afterTask->executionTime + current_time > stop_time) {
+                no_time_for_this_son++;
+            } else if (!is_ready(current_task)) {
+                sons_not_ready++;
+            } else {
+                sons_runnable[j] = true;
+                continue;
+            }
+            first_schedulable++; // if this son is not schedulable, lets remember to schedule the first next schedulable son
+            sons_runnable[j] = false;
+        }
+        int sons_not_runnable = sons_scheduled + sons_not_ready + no_time_for_this_son;
+        int num_sons_runnable - num_sons - sons_not_runnable; 
+        if (num_sons_runnable == 0) { 
+            // dequeue
+        } else {
+            if (num_sons_runnable > 1) { 
+                // queue the other tasks
+                for (int k = first_schedulable + 1; k < num_sons; k++) {
+                    queue_tasks_to_explore[start_index_queue+queue_size+1] = 
+                }
+            } 
+            // go with this task 
+            tasks_per_PN[i] = current_task->sons[first_schedulable]->afterTask;
+        }
+        
+    }
+    DFS_N_PNs(PN_Ids, nProcsAllocated, queue_tasks_to_explore, start_index_queue, queue_size, 
+                                                            tasks_per_PN, stop_time);
+}
+
+bool schedule_task(tas_t* task_to_add, int PN_Id, int current_time) {
+    int last_task_scheduled = output[PN_Id].numberOfTasks;
+    output[PN_Id].startTime[last_task_scheduled] = current_time;
+    output[PN_Id].exeTime[last_task_scheduled] = compute_actual_execution_time(PN_Id, task_to_add);
+    output[PN_Id].taskIDs[last_task_scheduled] = task_to_add->taskID;
+    output[PN_Id].tasks[last_task_scheduled] = task_to_add;
+    output[PN_Id].numberOfTasks++;
+}
+
+bool is_ready(task_t* task) {
+    for(int i = 0; i < task->num_parents; i++) {
+        if(! task->parents[i]->is_scheduled)
+            return false;
+    }
+    return true;
 }
 
 
@@ -297,6 +434,28 @@ task_t **ordered_tasks_criteria(int num_tasks, int whichDag, int (*criteria)(tas
     return result;
 }
 
+task_t **order_tasks_list(int num_tasks, task_t *list, int (*criteria)(task_t *)) {
+    task_t **result = malloc(sizeof(task_t *) * num_tasks);
+    int ptr = 0;
+
+    
+    task_t *currentTask = list;
+    while (currentTask != NULL)
+    {
+        result[ptr] = currentTask;
+        currentTask = currentTask->next;
+        ptr++;
+    }
+    
+
+    assert(ptr == num_tasks);
+
+    quickSort(result, 0, num_tasks - 1, criteria);
+
+    return result;
+}
+
+
 // UTILS 
 int compute_max_dag_execution_time(int dag_index) {
     int exec_time = 0;
@@ -313,4 +472,17 @@ int compute_actual_execution_time(int procID, task_t *task) {
     if (lookup_history(procID, task)) {
         return 9 * task->executionTime / 10;
     } else return task->executionTime;
+}
+
+int compute_estimation_completion_time(int numProc, int whichDag) {
+    int execution_time = 0;
+    int communication_time = 0;
+    task_t *currentTask = input[whichDag]->firstTask;
+    while(currentTask != NULL) {
+        execution_time += currentTask->executionTime;
+        for(int i = 0; i < currentTask->num_sons; i++) {
+            communication_time += currentTask->sons[i]->transferTime;
+        }
+    }
+    return (int) ( ((float) execution_time / numProc) + ((float) communication_time * (numProc-1) / numProc) )
 }

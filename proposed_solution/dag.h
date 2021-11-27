@@ -32,9 +32,10 @@ typedef struct dependancy{ //"afterID" can be executed only after finishing "bef
     // Added //
     task_t *beforeTask;
     task_t *afterTask;
+    bool is_scheduled;
 } dependancy_t;
 
-struct DAG{
+typedef struct DAG{
     int dagID;
     int dagType; 
     int arrivalTime;
@@ -49,7 +50,7 @@ struct DAG{
     // Added //
     task_t * root; // Fake node representing a root
     bool is_scheduled; // Used for full dag scheduling
-};
+} dag_t;
 
 task_t* find_task_in_dag(int taskID, int whichDag);
 
