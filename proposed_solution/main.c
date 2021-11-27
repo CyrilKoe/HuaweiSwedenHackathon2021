@@ -6,6 +6,7 @@
 #include "in_out.h"
 #include "scheduler.h"
 #include "utils.h"
+#include "tests.h"
 
 // Run me from the proposed_solution directory !!
 
@@ -26,6 +27,9 @@ int main(int argc, char *argv[]) {
   end = clock();
   printf("\n--- End scheduler : time %f ---\n",
          (double)(end - begin) / CLOCKS_PER_SEC);
+
+    check_deadlines();
+
   printer_function(out_file, begin, end);
   return 0;
 }

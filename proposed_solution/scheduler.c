@@ -67,10 +67,12 @@ void scheduler()
 
         for (int j = 0; j < dagsCount; j++) {
             if (!input[j]->is_scheduled && input[j]->arrivalTime < min_arrival_time) {
-                min_arrival_time = input[i]->arrivalTime;
+                min_arrival_time = input[j]->arrivalTime;
                 chosen_dag = j;
             }
         }
+
+        //printf("Lets schedule dag %d and arrival time %d\n", input[chosen_dag]->dagID, input[chosen_dag]->arrivalTime);
 
         int chosen_PN = first_proc_available();
         task_t **ordered_tasks_topo = ordered_tasks_criteria(input[chosen_dag]->tasksCount, chosen_dag, &get_remaining_time);
@@ -155,6 +157,9 @@ int first_proc_available()
     int min_id = 0;
     for (int procID = 0; procID < numberOfProcessors; procID++)
     {
+        if (output[procID].numberOfTasks == 0) {
+            return procID;
+        }
         int last_task = output[procID].numberOfTasks-1;
         if(last_task == -1) {
             return procID;
