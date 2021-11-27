@@ -173,12 +173,15 @@ void second_solution() {
 
 void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore, int *start_index_queue, int *queue_size, 
                                                             task_t **tasks_per_PN, int stop_time) {
+    bool progress = false; // are we making progress?
+    
     // as long as there is only one path, we move forward for every PN
     
     for (int i = 0; i < PN_Ids; i++) {
         task_t *current_task =  tasks_per_PN[i];
         int PN_Id = PN_Ids[i];
         // TODO CURRENT TIME LIE AU PARENT EN CAS DE DEADLOCK
+        // max (current_time, max(parents_starttime + execution))
         int current_time = output[PN_Id].startTime[output[PN_Id].numberOfTasks] + output[PN_Id].exeTime[output[PN_Id].numberOfTasks];
         schedule_task(current_task, PN_Id, current_time);
 
@@ -188,7 +191,6 @@ void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore
         int sons_not_ready = 0;
         int no_time_for_this_son = 0;
         bool *sons_runnable = malloc(sizeof(bool) * num_sons); // list of sons, true if runnable
-        int sons_not_runnable; 
         int first_schedulable = 0;
         for (int j = 0; j < num_sons; j++) {
 
@@ -205,15 +207,25 @@ void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore
             first_schedulable++; // if this son is not schedulable, lets remember to schedule the first next schedulable son
             sons_runnable[j] = false;
         }
-        int sons_not_runnable = sons_scheduled + sons_not_ready + no_time_for_this_son;
-        int num_sons_runnable - num_sons - sons_not_runnable; 
+        int num_sons_runnable - num_sons - (sons_scheduled + sons_not_ready + no_time_for_this_son); 
         if (num_sons_runnable == 0) { 
-            // dequeue
+            if (*queue_size == 0) {
+                // no more to dequeue
+
+            } else {
+                // dequeue
+                progress = true;
+            }
         } else {
+            progress = true;
             if (num_sons_runnable > 1) { 
                 // queue the other tasks
                 for (int k = first_schedulable + 1; k < num_sons; k++) {
-                    queue_tasks_to_explore[start_index_queue+queue_size+1] = 
+                    if (sons_runnable[k]) {
+                        queue_tasks_to_explore[(*start_index_queue)+(*queue_size)+1] = current_task->sons[k]->afterTask;
+                        *start_index_queue++;
+                        *queue_size++;
+                    }
                 }
             } 
             // go with this task 
@@ -221,8 +233,10 @@ void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore
         }
         
     }
-    DFS_N_PNs(PN_Ids, nProcsAllocated, queue_tasks_to_explore, start_index_queue, queue_size, 
+    if (progress) {
+        DFS_N_PNs(PN_Ids, nProcsAllocated, queue_tasks_to_explore, start_index_queue, queue_size, 
                                                             tasks_per_PN, stop_time);
+    }
 }
 
 bool schedule_task(tas_t* task_to_add, int PN_Id, int current_time) {
