@@ -14,11 +14,12 @@ struct ProcessorSchedule output[numberOfProcessors];
 void link_dependancies_to_tasks(int whichDag);
 int build_max_start_time(int whichDag, task_t *currentTask);
 void add_roots_to_dag(int whichDag);
+void full_dag_solution();
 task_t **ordered_tasks_criteria(int num_tasks, int whichDag, int (*criteria)(task_t *));
 int first_proc_available();
 int compute_estimation_completion_time(int numProc, int whichDag);
 bool is_ready(task_t* task);
-bool schedule_task(tas_t* task_to_add, int PN_Id, int current_time);
+bool schedule_task(task_t* task_to_add, int PN_Id, int current_time);
 
 ///// CRITERIAS ////
 int get_remaining_time(task_t *task) {
@@ -132,10 +133,10 @@ void second_solution() {
         int min_max_start_time = INT_MAX;
 
         for (int j = 0; j < dagsCount; j++) {
-            if(intput[j]->arrivalTime > current_time)
+            if(input[j]->arrivalTime > current_time)
                 continue;
 
-            int max_start_time = input[j]->deadlineTime + intput[j]->arrivalTime - compute_max_dag_execution_time(j);
+            int max_start_time = input[j]->deadlineTime + input[j]->arrivalTime - compute_max_dag_execution_time(j);
             if (!input[j]->is_scheduled && max_start_time < min_max_start_time) {
                 min_max_start_time = max_start_time;
                 chosen_dag = j;
@@ -207,14 +208,14 @@ void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore
             first_schedulable++; // if this son is not schedulable, lets remember to schedule the first next schedulable son
             sons_runnable[j] = false;
         }
-        int num_sons_runnable - num_sons - (sons_scheduled + sons_not_ready + no_time_for_this_son); 
+        int num_sons_runnable =  num_sons - (sons_scheduled + sons_not_ready + no_time_for_this_son); 
         if (num_sons_runnable == 0) { 
-            if (*queue_size == 0) {
-                // no more to dequeue
-
-            } else {
+            if (*queue_size > 0) {
                 // dequeue
                 progress = true;
+                tasks_per_PN[i] = queue_tasks_to_explore[(*start_index_queue)];
+                *start_index_queue = (*start_index_queue) + 1;
+                *queue_size = (*queue_size) - 1;
             }
         } else {
             progress = true;
@@ -223,8 +224,7 @@ void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore
                 for (int k = first_schedulable + 1; k < num_sons; k++) {
                     if (sons_runnable[k]) {
                         queue_tasks_to_explore[(*start_index_queue)+(*queue_size)+1] = current_task->sons[k]->afterTask;
-                        *start_index_queue++;
-                        *queue_size++;
+                        *queue_size += 1;
                     }
                 }
             } 
@@ -239,7 +239,7 @@ void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore
     }
 }
 
-bool schedule_task(tas_t* task_to_add, int PN_Id, int current_time) {
+bool schedule_task(task_t * task_to_add, int PN_Id, int current_time) {
     int last_task_scheduled = output[PN_Id].numberOfTasks;
     output[PN_Id].startTime[last_task_scheduled] = current_time;
     output[PN_Id].exeTime[last_task_scheduled] = compute_actual_execution_time(PN_Id, task_to_add);
