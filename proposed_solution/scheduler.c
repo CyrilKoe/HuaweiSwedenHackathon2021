@@ -23,6 +23,7 @@ void schedule_task(task_t* task_to_add, int PN_Id, int current_time);
 task_t *peek_first_ready(task_t **queue_tasks_to_explore, int *start_index_queue, int *queue_size, int current_time);
 void second_solution();
 void DFS_N_PNs(int *PN_Ids, int nProcsAllocated, task_t **queue_tasks_to_explore, int *start_index_queue, int *queue_size, task_t **tasks_per_PN, int stop_time, int current_time);
+int average_parallel_nodes(int dagId, int start_time, int stop_time);
 
 ///// CRITERIAS ////
 int get_remaining_time(task_t *task) {
@@ -153,7 +154,7 @@ void second_solution() {
 
         for (int j = 0; j < dagsCount; j++) {
             if (!input[j]->is_scheduled && !input[j]->is_scheduled_in_interval && input[j]->arrivalTime <= start_time){
-                int max_start_time = input[j]->deadlineTime + start_time - compute_max_dag_execution_time(j); // margin
+                int max_start_time = input[j]->deadlineTime + input[j]->arrivalTime - start_time - compute_max_dag_execution_time(j); // margin
                 if (max_start_time < min_max_start_time) {
                     min_max_start_time = max_start_time;
                     chosen_dag = j;
@@ -174,8 +175,10 @@ void second_solution() {
         int late = 0; // time lost because allocated processor is late
 
         printf("dag %03i start_time %i arrival time %i duration %i deadline %i", input[chosen_dag]->dagID, start_time, input[chosen_dag]->arrivalTime, compute_max_dag_execution_time(chosen_dag), input[chosen_dag]->deadlineTime);
-
-        while(compute_estimation_completion_time(nProcsAllocated, chosen_dag) > input[chosen_dag]->deadlineTime - 0*late) {
+        printf("\naverage parallel nodes = %i\n", average_parallel_nodes(chosen_dag, start_time, stop_time));
+        //while(compute_estimation_completion_time(nProcsAllocated, chosen_dag) > input[chosen_dag]->deadlineTime - 0*late) {
+        
+        for (int lls = 0; lls < 1 || (lls < average_parallel_nodes(chosen_dag, start_time, stop_time) && lls < 8); lls++) {
             nth_proc_available(PN_Ids, nProcsAllocated);
             nProcsAllocated++;
             assert(nProcsAllocated <= numberOfProcessors);
@@ -185,7 +188,6 @@ void second_solution() {
                     output[PN_Ids[n]].readyTime - input[chosen_dag]->arrivalTime: 0;
             }
         }
-
     
         printf(" num proc %i : ", nProcsAllocated);
         for (int k = 0; k < nProcsAllocated; k++) {
@@ -233,6 +235,9 @@ void second_solution() {
         }
     }
 }
+
+
+
 
 
 void print_queue(task_t **queue_tasks_to_explore, int *start_index_queue, int *queue_size) {
@@ -623,4 +628,86 @@ int compute_estimation_completion_time(int numProc, int whichDag) {
         currentTask = currentTask->next;
     }
     return (int) ( ((float) execution_time / numProc) + ((float) communication_time * (numProc-1) / numProc) );
+}
+
+
+struct queue_item {
+    task_t *task;
+    int depth;
+    int start_time;  
+};
+
+int average_parallel_nodes(int dagId, int start_time, int stop_time) {
+    struct queue_item ** queue = malloc(sizeof(struct queue_item *) * (input[dagId]->tasksCount + 1)); // Count the root
+    for(int i = 0; i < input[dagId]->tasksCount; i++) {
+        queue[i] = NULL;
+    }
+
+    int queue_start = 0;
+    int queue_end = 0;
+
+    struct queue_item *root_item = malloc(sizeof(struct queue_item));
+    root_item->depth = 0;
+    root_item->task = input[dagId]->root;
+    root_item->start_time = start_time;
+    queue[queue_end++] = root_item;
+
+    
+
+    int current_depth = 0;
+    int start_depth = 0;
+    int num_parallel_nodes = 0;
+    int total_exec_time = 0;
+    int result = 0;
+    //int 
+
+    while((queue_end - queue_start) > 0) {
+        struct queue_item *item = queue[queue_start++];
+
+        if(item->start_time > stop_time) {
+            continue;
+        }
+        
+        if(!item->task->is_scheduled) {
+            if (item->depth == current_depth) {
+                num_parallel_nodes++;
+            } else {
+                result += num_parallel_nodes; // a terme, ponderer par exec time
+                num_parallel_nodes = 0;
+                current_depth++;
+            }
+
+        } 
+
+        for(int i = 0; i < item->task->num_sons; i++) {
+            bool already_there = false;
+            for (int j = 0; j < queue_end; j++) {
+                if (queue[j]->task->taskID == item->task->sons[i]->afterTask->taskID) {
+                    already_there = true;
+                }
+            }
+            if (already_there) continue; 
+
+            struct queue_item *next_item = malloc(sizeof(struct queue_item));
+            next_item->depth = item->depth+1;
+            next_item->task = item->task->sons[i]->afterTask;
+
+            if(is_ready(item->task->sons[i]->afterTask)) {
+                next_item->start_time = start_time;
+                start_depth = item->depth;
+            } else {
+                next_item->start_time = item->start_time + item->task->executionTime;
+            }
+            queue[queue_end++] = next_item;
+        }
+    }
+
+    for(int i = 0; i < input[dagId]->tasksCount; i++) {
+        if(queue[i] != NULL) {
+            free(queue[i]);
+        }
+    }
+    free(queue);
+
+    return (current_depth - start_depth) == 0 ? 1 : result / (current_depth - start_depth);
 }
