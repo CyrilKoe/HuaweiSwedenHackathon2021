@@ -11,6 +11,7 @@ struct ProcessorSchedule{
     int exeTime[N]; // place actual execution times of tasks, so exeTime[i] is execution time of i-th task scheduled on this processor
     // Added //
     task_t *tasks[N];
+    int readyTime;
 };
 
 extern struct ProcessorSchedule output[numberOfProcessors];

@@ -176,7 +176,7 @@ void reader_function(char * filename){ // This function reads input from the jso
             json_object_object_get_ex(val, "Deadline", &relativeDeadline);
             input[dagsCount]->dagType = json_object_get_int(type);
             input[dagsCount]->arrivalTime = json_object_get_int(arrivalTime);
-            input[dagsCount]->deadlineTime = json_object_get_int(relativeDeadline) + input[dagsCount]->arrivalTime;
+            input[dagsCount]->deadlineTime = json_object_get_int(relativeDeadline);//+ input[dagsCount]->arrivalTime;
             char buffer[20];
             input[dagsCount]->dagID = atoi(strncpy(buffer, &key[3], 20));
             dagsCount++;

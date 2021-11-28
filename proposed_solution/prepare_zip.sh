@@ -13,6 +13,7 @@ cp ../utils.h .
 codingame-merge -w . -main main.cpp -o merge.c 
 
 cp ../answer*.csv .
+rm answer0.csv 
 
 rm *.cpp *.h 
 
