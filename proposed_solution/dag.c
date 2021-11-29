@@ -93,7 +93,7 @@ void add_dependency_to_list(int whichDag, int beforeID, int afterID, int transfe
 
 void print_task(task_t *currentTask)
 {
-    printf("%d : [execution] %d , [num_sons] %d , [num_parents] %d , [max_remaining_time] %d , [worst_start_time] %d\n", currentTask->taskID, currentTask->executionTime, currentTask->num_sons, currentTask->num_parents, currentTask->remainingTime, currentTask->worstStart);
+    printf("%d : [num_sons] %d , [num_parents] %d\n", currentTask->taskID, currentTask->num_sons, currentTask->num_parents);
 }
 
 void print_dag_tasks(int whichDag, bool extended)

@@ -15,16 +15,11 @@ typedef struct task{
     struct task *next;
     // Added //
     int whichDag;
-    int remainingTime; // gives the worst time until the end of this DAG
-    int worstStart; // gives the worst time to start
     int num_sons;
     struct dependancy *sons[tasksPerGraph];
     int num_parents;
-    struct dependancy *parents[tasksPerGraph];
-    int whichPn;
-    int endingTime;
+    struct dependancy *parents[tasksPerGraph];  
     bool is_scheduled;
-    
 } task_t;
 
 typedef struct dependancy{ //"afterID" can be executed only after finishing "beforeID"
@@ -50,12 +45,7 @@ typedef struct DAG{
     task_t * firstTask;
     dependancy_t * firstDependency;
     // Added //
-    int queue_size;
-    int start_index_queue;
-    task_t ** queue_tasks_to_explore;
     task_t * root; // Fake node representing a root
-    bool is_scheduled; // Used for full dag scheduling
-    bool is_scheduled_in_interval;
 } dag_t;
 
 task_t* find_task_in_dag(int taskID, int whichDag);
