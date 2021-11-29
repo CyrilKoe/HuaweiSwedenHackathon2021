@@ -34,7 +34,7 @@ typedef struct augmented_dag
     bool is_completed;
 } augmented_dag_t;
 
-typedef struct queue_dps
+typedef struct queue_dfs
 {
     int first;
     int last;
@@ -44,15 +44,19 @@ typedef struct queue_dps
 typedef struct scheduling_dag
 {
     augmented_dag_t *aug_dag;
-    queue_dfs_t *queue;
+    queue_dfs_t queue;
     int cpus[numberOfProcessors];
 } scheduling_dag_t;
 
-typedef struct history
+typedef struct decision_list
 {
-    augmented_dag_t *cpu_history[numberOfProcessors];
-    int last_addeds[numberOfProcessors];
-} history_t;
+    int size;
+    scheduling_dag_t **sch_dag;
+    int *max_start_time;
+    int *cpu_allocated;
+    int current_time;
+    int stop_time;
+} decision_list_t;
 
 struct ProcessorSchedule output[numberOfProcessors];
 
@@ -66,7 +70,33 @@ int average_parallel_nodes(int dagId, int start_time, int stop_time);
 
 void shitty_sort(int *T, int N_arr);
 
-scheduling_dag_t *new_scheduling_dag(task_t *root);
+augmented_task_t *new_augmented_task(task_t *task);
+void remove_augmented_task(augmented_task_t *aug_task);
+augmented_dag_t *new_augmented_dag(dag_t *dag);
+void link_augmented_dag(augmented_dag_t *aug_dag);
+augmented_dag_t *copy_augmented_dag(augmented_dag_t *origin);
+void remove_augmented_dag(augmented_dag_t *aug_dag);
+scheduling_dag_t *new_scheduling_dag(dag_t *dag);
+void remove_scheduling_dag(scheduling_dag_t *sch_dag);
+scheduling_dag_t *copy_scheduling_dag(scheduling_dag_t *origin);
+void init_queue(queue_dfs_t *queue);
+void remove_queue_dfs(queue_dfs_t *queue);
+void enqueue(queue_dfs_t *queue, augmented_task_t *elem);
+augmented_task_t *dequeue(queue_dfs_t *queue);
+int place_first_element_ready(queue_dfs_t *queue, int cpu);
+bool lookup_history(augmented_task_t *element, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors]);
+int get_elem_ready_time(augmented_task_t *elem, int pn);
+int are_parents_scheduled(augmented_task_t *elem);
+int is_elem_ready(augmented_task_t *elem, int time, int pn);
+int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write);
+bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int start_time, int stop_time, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write);
+int compute_serial_completion_time(augmented_dag_t *aug_dag);
+decision_list_t *create_decision_list(int size, int current_time, int stop_time);
+void remove_decision_list(decision_list_t *list);
+void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag);
+void add_cpu_to_first_decision(decision_list_t *list);
+void sort_decision_list(decision_list_t *list);
+void print_decision_list(decision_list_t *list);
 
 /////////////////////////////
 // MAIN /////////////////////
@@ -76,8 +106,10 @@ void scheduler()
 {
     int num_tasks = 0;
 
-    int *dag_arrivals = malloc(dagsCount * sizeof(int));
+    int *dag_arrivals = malloc((1 + dagsCount) * sizeof(int));
+
     scheduling_dag_t **scheduling_dags = malloc(sizeof(scheduling_dag_t *) * dagsCount);
+
     for (int i = 0; i < dagsCount; i++)
     {
         scheduling_dags[i] = NULL;
@@ -86,18 +118,107 @@ void scheduler()
         link_dependancies_to_tasks(i);
         add_roots_to_dag(i);
     }
+    dag_arrivals[dagsCount] = INT_MAX;
     shitty_sort(dag_arrivals, dagsCount);
 
-    int current_time = dag_arrivals[0];
-    while (1)
+    int start_time = dag_arrivals[0];
+    int stop_time = 0;
+    int arrival_count = 0;
+
+    augmented_task_t *history[historyOfProcessor][numberOfProcessors];
+    for (int i = 0; i < historyOfProcessor; i++)
     {
-        // Count num dag ready
+        for (int j = 0; j < numberOfProcessors; j++)
+        {
+            history[i][j] = NULL;
+        }
+    }
+
+    while (stop_time < INT_MAX)
+    {
+        int n_dags_to_schedule = 0;
+        // Find new dags ready
         for (int i = 0; i < dagsCount; i++)
         {
-            if ((scheduling_dags[i] == NULL) && (input[i]->arrivalTime <= current_time))
+            if ((scheduling_dags[i] == NULL) && (input[i]->arrivalTime <= start_time))
             {
-                scheduling_dags[i] = new_scheduling_dag(input[i]->root);
+                scheduling_dags[i] = new_scheduling_dag(input[i]);
+                arrival_count++;
             }
+            if (scheduling_dags[i] != NULL && !scheduling_dags[i]->aug_dag->is_completed)
+            {
+                n_dags_to_schedule++;
+            }
+        }
+
+        stop_time = dag_arrivals[arrival_count];
+
+        printf("----- start %i - stop %i - dags %i/%i -----\n", start_time, stop_time, n_dags_to_schedule, arrival_count);
+
+        decision_list_t *decision_list = create_decision_list(n_dags_to_schedule, start_time, stop_time);
+
+        // Now we are ready
+        for (int i = 0; i < dagsCount; i++)
+        {
+            if (scheduling_dags[i] == NULL || scheduling_dags[i]->aug_dag->is_completed)
+            {
+                continue;
+            }
+            add_to_decision_list(decision_list, scheduling_dags[i]);
+        }
+
+        int num_proc_to_allocate = numberOfProcessors;
+
+        for (int i = 0; i < numberOfProcessors; i++)
+        {
+            sort_decision_list(decision_list);
+            print_decision_list(decision_list);
+            add_cpu_to_first_decision(decision_list);
+        }
+
+        // Do the actual scheduling
+        for (int i = 0; i < decision_list->size; i++)
+        {
+            scheduling_dag_t *actual_dag = decision_list->sch_dag[i];
+            int cpus_to_allocate = decision_list->cpu_allocated[i];
+            if (cpus_to_allocate == 0)
+            {
+                continue;
+            }
+
+            int cpus[numberOfProcessors];
+            for (int i = 0; i < numberOfProcessors; i++)
+            {
+                if (cpus_to_allocate-- > 0)
+                {
+                    cpus[i] = i;
+                }
+                else
+                {
+                    cpus[i] = -1;
+                }
+            }
+
+            printf("DAG %i - ", actual_dag->aug_dag->dag->dagID);
+            actual_dag->aug_dag->is_completed = multi_dfs(cpus, &(actual_dag->queue), start_time, stop_time, history, true);
+            printf("\n");
+        }
+
+        remove_decision_list(decision_list);
+
+        // Now we are ready
+        for (int i = 0; i < dagsCount; i++)
+        {
+            if (!(scheduling_dags[i] == NULL))
+            {
+            }
+        }
+
+        // Ending
+        start_time = stop_time;
+        if (start_time > 1000000)
+        {
+            //break;
         }
     }
 }
@@ -153,7 +274,7 @@ void shitty_sort(int *T, int N_arr)
 }
 
 /////////////////////////////
-// QUEUE DPS ////////////////
+// AUGMENTED TASK ///////////
 /////////////////////////////
 
 augmented_task_t *new_augmented_task(task_t *task)
@@ -164,144 +285,167 @@ augmented_task_t *new_augmented_task(task_t *task)
     result->start_time = -1;
     result->num_sons = task->num_sons;
     result->num_parents = task->num_parents;
-    result->sons = malloc(task->num_sons * sizeof(augmented_task_t *));
-    for(int i = 0; i < result->num_sons; i++)
+    result->sons = malloc(result->num_sons * sizeof(augmented_task_t *));
+    for (int i = 0; i < result->num_sons; i++)
         result->sons[i] = NULL;
-    result->parents = malloc(task->num_parents * sizeof(augmented_task_t *));
-    for(int i = 0; i < result->num_parents; i++)
+    result->parents = malloc(result->num_parents * sizeof(augmented_task_t *));
+    for (int i = 0; i < result->num_parents; i++)
         result->parents[i] = NULL;
     return result;
 }
 
-augmented_task_t *
-new_augmented_task_recu(augmented_dag_t *aug_dag, task_t *task)
+void remove_augmented_task(augmented_task_t *aug_task)
 {
-    augmented_task_t *result = malloc(sizeof(augmented_task_t));
-    result->task = task;
-    result->which_pn = -1;
-    result->start_time = -1;
-    result->num_sons = 0;
-    result->num_parents = 0;
-    result->sons = malloc(task->num_sons * sizeof(augmented_task_t *));
-    result->parents = malloc(task->num_parents * sizeof(augmented_task_t *));
-    if (task->taskID != -1)
-        aug_dag->elems[aug_dag->size++] = result;
-    else
-        aug_dag->root = result;
-    for (int i = 0; i < result->num_sons; i++)
-    {
-        augmented_task_t *new_son = NULL;
-        for (int j = 0; j < aug_dag->size; j++)
-        {
-            if (aug_dag->elems[j]->task == task->sons[i]->afterTask)
-            {
-                new_son = aug_dag->elems[j];
-                break;
-            }
-        }
-        if (new_son == NULL)
-        {
-            new_son = new_augmented_task_recu(aug_dag, task->sons[i]->afterTask);
-        }
-
-        new_son->parents[new_son->num_parents++] = result;
-        result->sons[result->num_sons++] = new_son;
-    }
-
-    return result;
+    free(aug_task->parents);
+    free(aug_task->sons);
+    free(aug_task);
 }
 
-augmented_dag_t *new_augmented_dag_recu(task_t *root)
-{
-    augmented_dag_t *result = malloc(sizeof(augmented_dag_t));
-    result->size = 0;
-    for (int i = 0; i < tasksPerGraph; i++)
-    {
-        result->elems[i] = NULL;
-    }
-    result->root = new_augmented_task_recu(result, root);
-    return result;
-}
-
-void link_augmented_dag(augmented_dag_t *aug_dag)
-{
-    for (int i = 0; i < aug_dag->size; i++)
-    {
-        for (int j = 0; j < aug_dag->elems[i]->task->num_sons; j++)
-            for (int k = 0; k < aug_dag->size; k++)
-                if (aug_dag->elems[i]->task->sons[j]->afterTask->taskID == aug_dag->elems[k]->task->taskID)
-                    aug_dag->elems[i]->sons[j] = aug_dag->elems[k];
-        for (int j = 0; j < aug_dag->elems[i]->task->num_parents; j++)
-            for (int k = 0; k < aug_dag->size; k++)
-                if (aug_dag->elems[i]->task->parents[j]->beforeTask->taskID == aug_dag->elems[k]->task->taskID)
-                    aug_dag->elems[i]->parents[j] = aug_dag->elems[k];
-    }
-}
+/////////////////////////////
+// AUGMENTED DAG ////////////
+/////////////////////////////
 
 augmented_dag_t *new_augmented_dag(dag_t *dag)
 {
     augmented_dag_t *result = malloc(sizeof(augmented_dag_t));
     result->dag = dag;
     result->is_completed = false;
-    result->root = new_augmented_dag_task(dag->root);
     result->size = dag->tasksCount;
+    // Deal with the root
+    result->root = new_augmented_task(dag->root);
+    // Deal with the other tasks
     task_t *task = dag->firstTask;
     int i = 0;
     while (task != NULL)
     {
-        result->elems[i] = new_augmented_task(task);
-        i++;
+        result->elems[i++] = new_augmented_task(task);
         task = task->next;
     }
     link_augmented_dag(result);
     return result;
 }
 
-augmented_dag_t copy_augmented_dag(augmented_dag_t *origin)
+void link_augmented_dag(augmented_dag_t *aug_dag)
+{
+    for (int j = 0; j < aug_dag->root->num_sons; j++)
+        for (int k = 0; k < aug_dag->size; k++)
+            if (aug_dag->root->task->sons[j]->afterTask->taskID == aug_dag->elems[k]->task->taskID)
+                aug_dag->root->sons[j] = aug_dag->elems[k];
+
+    for (int i = 0; i < aug_dag->size; i++)
+    {
+        for (int j = 0; j < aug_dag->elems[i]->num_sons; j++)
+            for (int k = 0; k < aug_dag->size; k++)
+                if (aug_dag->elems[i]->task->sons[j]->afterTask->taskID == aug_dag->elems[k]->task->taskID)
+                    aug_dag->elems[i]->sons[j] = aug_dag->elems[k];
+        for (int j = 0; j < aug_dag->elems[i]->num_parents; j++)
+            for (int k = 0; k < aug_dag->size; k++)
+                if (aug_dag->elems[i]->task->parents[j]->beforeTask->taskID == aug_dag->elems[k]->task->taskID)
+                    aug_dag->elems[i]->parents[j] = aug_dag->elems[k];
+    }
+}
+
+augmented_dag_t *copy_augmented_dag(augmented_dag_t *origin)
 {
     augmented_dag_t *result = new_augmented_dag(origin->dag);
-
+    result->is_completed = origin->is_completed;
     for (int i = 0; i < result->size; i++)
     {
-        result->elems[i]->is_scheduled =  origin->elems[i]->is_scheduled;
-        result->elems[i]->start_time =  origin->elems[i]->start_time;
-        result->elems[i]->which_pn =  origin->elems[i]->which_pn;
+        result->elems[i]->is_scheduled = origin->elems[i]->is_scheduled;
+        result->elems[i]->start_time = origin->elems[i]->start_time;
+        result->elems[i]->which_pn = origin->elems[i]->which_pn;
     }
+    return result;
 }
 
 void remove_augmented_dag(augmented_dag_t *aug_dag)
 {
+    for (int i = 0; i < aug_dag->size; i++)
+    {
+        remove_augmented_task(aug_dag->elems[i]);
+    }
+    remove_augmented_task(aug_dag->root);
+    free(aug_dag);
 }
 
-// Prepare a queue and all the graph fake nodes for a true graph
-queue_dfs_t *new_queue()
-{
-    queue_dfs_t *result = malloc(sizeof(queue_dfs_t *));
-    result->first = 0;
-    result->last = 0;
-}
+/////////////////////////////
+// SCHEDULING DAG ///////////
+/////////////////////////////
 
-scheduling_dag_t *new_scheduling_dag(task_t *root)
+scheduling_dag_t *new_scheduling_dag(dag_t *dag)
 {
     scheduling_dag_t *result = malloc(sizeof(scheduling_dag_t));
-    result->aug_dag = new_augmented_dag(root);
-    result->queue = new_queue();
+    result->aug_dag = new_augmented_dag(dag);
+    init_queue(&result->queue);
+    for (int i = 0; i < result->aug_dag->root->num_sons; i++)
+    {
+        enqueue(&result->queue, result->aug_dag->root->sons[i]);
+    }
     for (int i = 0; i < numberOfProcessors; i++)
     {
         result->cpus[i] = -1;
     }
+    return result;
 }
 
 void remove_scheduling_dag(scheduling_dag_t *sch_dag)
 {
-    remove_audgmented_dag(sch_dag->aug_dag);
+    remove_augmented_dag(sch_dag->aug_dag);
+    //remove_queue_dfs(sch_dag->queue);
     free(sch_dag);
 }
 
 scheduling_dag_t *copy_scheduling_dag(scheduling_dag_t *origin)
 {
     scheduling_dag_t *result = malloc(sizeof(scheduling_dag_t));
+    for (int i = 0; i < numberOfProcessors; i++)
+    {
+        result->cpus[i] = origin->cpus[i];
+    }
     result->aug_dag = copy_augmented_dag(origin->aug_dag);
+    // Double copie queue
+    result->queue.first = origin->queue.first;
+    result->queue.last = origin->queue.last;
+    int i = origin->queue.first;
+    while (i != origin->queue.last)
+    {
+        for (int j = 0; j < result->aug_dag->size; j++)
+        {
+            if (origin->queue.elems[i]->task->taskID == result->aug_dag->elems[j]->task->taskID)
+                result->queue.elems[i] = result->aug_dag->elems[j];
+        }
+        i++;
+        if (i == tasksPerGraph)
+            i = 0;
+    }
+    return result;
+}
+
+/////////////////////////////
+// QUEUE_DFS ////////////////
+/////////////////////////////
+
+void init_queue(queue_dfs_t *queue)
+{
+    queue->first = 0;
+    queue->last = 0;
+    for (int i = 0; i < tasksPerGraph; i++)
+    {
+        queue->elems[i] = NULL;
+    }
+}
+
+void remove_queue_dfs(queue_dfs_t *queue)
+{
+    //free(queue);
+}
+
+void enqueue(queue_dfs_t *queue, augmented_task_t *elem)
+{
+    queue->elems[queue->last++] = elem;
+    if (queue->last == tasksPerGraph)
+        queue->last = 0;
+    assert(queue->first != queue->last);
 }
 
 augmented_task_t *dequeue(queue_dfs_t *queue)
@@ -316,39 +460,167 @@ augmented_task_t *dequeue(queue_dfs_t *queue)
     return result;
 }
 
-void enqueue(queue_dfs_t *queue, augmented_task_t *elem)
+// Place the first element to be ready on the front
+int place_first_element_ready(queue_dfs_t *queue, int cpu)
 {
-    queue->elems[queue->last++] = elem;
-    if (queue->last == tasksPerGraph)
-        queue->last = 0;
     assert(queue->first != queue->last);
+
+    int current = queue->first;
+    int min_ready_time = INT_MAX;
+    int min_index = -1;
+    while (current != queue->last)
+    {
+        int this_time = get_elem_ready_time(queue->elems[current], cpu);
+        if (min_ready_time > this_time)
+        {
+            min_ready_time = this_time;
+            min_index = current;
+        }
+        current += 1;
+        if (current == tasksPerGraph)
+            current = 0;
+    }
+    augmented_task_t *tmp = queue->elems[queue->first];
+    queue->elems[queue->first] = queue->elems[min_index];
+    queue->elems[min_index] = tmp;
+    return min_ready_time;
 }
 
-/////////////////////////////////////
-// DFS MULTI TASKS HELPERS //////////
-/////////////////////////////////////
+/////////////////////////////
+// DECISION LIST ////////////
+/////////////////////////////
 
-history_t *create_history()
+decision_list_t *create_decision_list(int size, int current_time, int stop_time)
 {
-    history_t *result = malloc(sizeof(history_t));
-    for (int i = 0; i < numberOfProcessors; i++)
+    decision_list_t *result = malloc(sizeof(decision_list_t));
+    result->size = size;
+    result->cpu_allocated = malloc(size * sizeof(int));
+    result->max_start_time = malloc(size * sizeof(int));
+    result->sch_dag = malloc(size * sizeof(scheduling_dag_t *));
+    result->current_time = current_time;
+    result->stop_time = stop_time;
+    for (int i = 0; i < size; i++)
     {
-        result->cpu_history[i] = malloc(N * sizeof(augmented_task_t *));
-        result->last_added[i] = 0;
+        result->cpu_allocated[i] = 0;
+        result->max_start_time[i] = 0;
+        result->sch_dag[i] = NULL;
     }
     return result;
 }
 
-bool lookup_history(augmented_task_t *element, history_t *history, int pn)
+void remove_decision_list(decision_list_t *list)
 {
-    int history_depth = 0;
-    for (int j = history->last_added[pn] - 1; j >= 0; j--)
+    free(list->cpu_allocated);
+    free(list->max_start_time);
+    free(list->sch_dag);
+    free(list);
+}
+
+void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag)
+{
+    for (int i = 0; i < list->size; i++)
     {
-        if (output[pn].tasks[j]->taskType == element->task->taskType)
-            return true;
-        history_depth++;
-        if (history_depth == historyOfProcessor)
+        if (list->sch_dag[i] == NULL)
+        {
+            list->sch_dag[i] = original_dag;
+            list->cpu_allocated[i] = 0;
+            list->max_start_time[i] = original_dag->aug_dag->dag->deadlineTime - list->current_time - compute_serial_completion_time(original_dag->aug_dag);
+            break;
+        }
+    }
+}
+
+void add_cpu_to_first_decision(decision_list_t *list)
+{
+    assert(list->size > 0);
+    assert(!list->sch_dag[0]->aug_dag->is_completed);
+    list->cpu_allocated[0] += 1;
+    scheduling_dag_t *copy = copy_scheduling_dag(list->sch_dag[0]);
+    int cpus_to_allocate = list->cpu_allocated[0];
+    // Allocate CPUs
+    int cpus[numberOfProcessors];
+    for (int i = 0; i < numberOfProcessors; i++)
+    {
+        if (cpus_to_allocate-- > 0)
+        {
+            cpus[i] = i;
+        }
+        else
+        {
+            cpus[i] = -1;
+        }
+    }
+    // Init history
+    augmented_task_t *history[historyOfProcessor][numberOfProcessors];
+    for (int i = 0; i < historyOfProcessor; i++)
+    {
+        for (int j = 0; j < numberOfProcessors; j++)
+        {
+            history[i][j] = NULL;
+        }
+    }
+    int last_time = list->max_start_time[0];
+    copy->aug_dag->is_completed = multi_dfs(cpus, &(copy->queue), list->current_time, list->stop_time, history, false);
+    int new_time = copy->aug_dag->dag->deadlineTime - list->current_time - compute_serial_completion_time(copy->aug_dag);
+
+    if(copy->aug_dag->is_completed || new_time == last_time) {
+        list->max_start_time[0] = INT_MAX;
+    }
+    else if ((float) new_time / (float) last_time > 0.7f) {
+        list->max_start_time[0] = new_time * 10;
+    }
+    else {
+        list->max_start_time[0] = new_time;
+    }
+
+    remove_scheduling_dag(copy);
+}
+
+void print_decision_list(decision_list_t *list)
+{
+    printf("start %i end %i size %i : ", list->current_time, list->stop_time, list->size);
+    for (int i = 0; i < list->size; i++)
+    {
+        printf("%i : [%i, %i, %i, (%i)] , ", i, list->cpu_allocated[i], list->max_start_time[i], list->sch_dag[i]->aug_dag->dag->dagID, list->sch_dag[i]->aug_dag->is_completed);
+    }
+    printf("\n");
+}
+
+void sort_decision_list(decision_list_t *list)
+{
+    int i, j;
+    for (i = 0; i < list->size - 1; i++)
+    {
+        for (j = i + 1; j < list->size; j++)
+        {
+            if (list->max_start_time[j] < list->max_start_time[i] && !list->sch_dag[j]->aug_dag->is_completed)
+            {
+                scheduling_dag_t *temp_dag = list->sch_dag[i];
+                int temp_max_start = list->max_start_time[i];
+                int temp_cpu_alloc = list->cpu_allocated[i];
+                list->cpu_allocated[i] = list->cpu_allocated[j];
+                list->max_start_time[i] = list->max_start_time[j];
+                list->sch_dag[i] = list->sch_dag[j];
+                list->cpu_allocated[j] = temp_cpu_alloc;
+                list->max_start_time[j] = temp_max_start;
+                list->sch_dag[j] = temp_dag;
+            }
+        }
+    }
+}
+
+/////////////////////////////
+// DFS HELPERS //////////////
+/////////////////////////////
+
+bool lookup_history(augmented_task_t *element, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors])
+{
+    for (int j = historyOfProcessor - 1; j >= 0; j--)
+    {
+        if (history[j][pn] == NULL)
             return false;
+        if (history[j][pn]->task->taskType == element->task->taskType)
+            return true;
     }
     return false;
 }
@@ -383,49 +655,57 @@ int are_parents_scheduled(augmented_task_t *elem)
 
 int is_elem_ready(augmented_task_t *elem, int time, int pn)
 {
+    if (input[elem->task->whichDag]->arrivalTime > time)
+        return false;
+    if (elem->num_parents == 0)
+        return true;
     if (!are_parents_scheduled(elem))
         return false;
-    return get_elem_ready_time(elem, pn) >= time;
+    return get_elem_ready_time(elem, pn) <= time;
 }
 
-// Place the first element to be ready on the front
-int place_first_element_ready(queue_dfs_t *queue, int cpu)
+int get_actual_exec_time(augmented_task_t *elem, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors])
 {
-    assert(queue->first != queue->last);
+    if (lookup_history(elem, pn, history))
+        return elem->task->executionTime * 9 / 10;
+    else
+        return elem->task->executionTime;
+}
 
-    int current = queue->first;
-    int min_ready_time = INT_MAX;
-    int min_index = -1;
-    while (current != queue->last)
-    {
-        int this_time = get_elem_ready_time(queue->elems[current], cpu);
-        if (min_ready_time > this_time)
-        {
-            min_ready_time = this_time;
-            min_index = current;
-        }
-        if (current++ == queue->last)
-            current = 0;
+int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write)
+{
+    if(write) {
+        printf("%i ",elem->task->taskID);
     }
-    augmented_task_t *tmp = queue->elems[queue->first];
-    queue->elems[queue->first] = queue->elems[min_index];
-    queue->elems[min_index] = tmp;
-    return min_ready_time;
-}
-
-int execute_elem(augmented_task_t *elem, int time, int pn)
-{
     assert(is_elem_ready(elem, time, pn));
+    assert(!elem->is_scheduled);
     elem->is_scheduled = true;
     elem->start_time = time;
     elem->which_pn = pn;
-    return time + elem->task->executionTime;
+
+    int exetime = get_actual_exec_time(elem, pn, history);
+
+    if(write) {
+        int n_write = output[pn].numberOfTasks;
+        output[pn].taskIDs[n_write] = elem->task->taskID;
+        output[pn].startTime[n_write] = time;
+        output[pn].exeTime[n_write] = exetime;
+        output[pn].numberOfTasks++;
+        assert(!elem->task->is_scheduled);
+        elem->task->is_scheduled = true;
+    }
+
+    return time + exetime;
 }
 
-void multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int start_time, int stop_time)
+/////////////////////////////
+// DFS  /////////////////////
+/////////////////////////////
+
+bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int start_time, int stop_time, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write)
 {
     int cpu_times[numberOfProcessors];
-    task_t *to_execute[numberOfProcessors];
+    augmented_task_t *to_execute[numberOfProcessors];
     for (int i = 0; i < numberOfProcessors; i++)
     {
         cpu_times[i] = start_time;
@@ -443,11 +723,14 @@ void multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
             {
                 continue;
             }
+            cpu_times[which_cpu] = current_time;
             // Nothing to run
             if (to_execute[which_cpu] == NULL)
             {
                 if (queue->first == queue->last)
                 {
+                    // Let the other deal with the current_time
+                    cpu_times[which_cpu] = -1;
                     continue;
                 }
                 int min_ready_time = place_first_element_ready(queue, which_cpu);
@@ -458,11 +741,24 @@ void multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
                     continue;
                 }
 
+                int end_execution_time = min_ready_time + get_actual_exec_time(queue->elems[queue->first], which_cpu, history);
+                if (end_execution_time >= stop_time)
+                {
+                    continue;
+                }
+
                 to_execute[which_cpu] = dequeue(queue);
             }
             // Run
-            cpu_times[which_cpu] = execute_elem(to_execute[which_cpu], current_time, which_cpu);
+            cpu_times[which_cpu] = execute_elem(to_execute[which_cpu], current_time, which_cpu, history, write);
+
             augmented_task_t *executed = to_execute[which_cpu];
+            for (int hist = 0; hist < historyOfProcessor - 1; hist++)
+            {
+                history[hist][which_cpu] = history[hist + 1][which_cpu];
+            }
+            history[historyOfProcessor - 1][which_cpu] = executed;
+
             to_execute[which_cpu] = NULL;
 
             for (int i = 0; i < executed->num_sons; i++)
@@ -471,7 +767,8 @@ void multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
                 {
                     continue;
                 }
-                int end_time = get_elem_ready_time(executed->sons[i], which_cpu) + executed->sons[i]->task->executionTime;
+
+                int end_time = get_elem_ready_time(executed->sons[i], which_cpu) + get_actual_exec_time(executed->sons[i], which_cpu, history);
 
                 if (end_time < stop_time && is_elem_ready(executed->sons[i], cpu_times[which_cpu], which_cpu) && to_execute[which_cpu] == NULL)
                 {
@@ -483,22 +780,28 @@ void multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
                 }
             }
         }
-
+        // Find next time
         int next_time = INT_MAX;
+        bool no_tasks_to_do = true;
         for (int which_cpu = 0; which_cpu < numberOfProcessors; which_cpu++)
         {
-            // Non allocated
-            if (allocated_cpus[which_cpu] != -1 && cpu_times[which_cpu] < next_time)
-            {
+            if (allocated_cpus[which_cpu] == -1 || cpu_times[which_cpu] == -1)
+                continue;
+            if (to_execute[which_cpu] != NULL)
+                no_tasks_to_do = false;
+            if (cpu_times[which_cpu] < next_time)
                 next_time = cpu_times[which_cpu];
-            }
         }
-        if (current_time == next_time)
+        // Nothing happening
+        if (current_time == next_time && no_tasks_to_do)
         {
-            return;
+            break;
         }
         current_time = next_time;
     }
+    if (queue->first == queue->last)
+        return true;
+    return false;
 }
 
 /////////////////////////////
@@ -514,6 +817,7 @@ void add_roots_to_dag(int whichDag)
     root->taskType = -1;
     root->next = NULL;
     root->is_scheduled = true;
+    root->whichDag = whichDag;
 
     task_t *currentTask = input[whichDag]->firstTask;
     while (currentTask != NULL)
@@ -535,6 +839,22 @@ void add_roots_to_dag(int whichDag)
     }
 
     input[whichDag]->root = root;
+}
+
+/////////////////////////////
+// CPU ALLOCATION ///////////
+/////////////////////////////
+
+int compute_serial_completion_time(augmented_dag_t *aug_dag)
+{
+    int sum = 0;
+    for (int i = 0; i < aug_dag->size; i++)
+    {
+        if (aug_dag->elems[i]->is_scheduled)
+            continue;
+        sum += aug_dag->elems[i]->task->executionTime;
+    }
+    return sum;
 }
 
 /////////////////////////////
@@ -581,7 +901,6 @@ void quickSort(task_t **arr, int low, int high, int (*criteria)(task_t *))
 task_t **ordered_tasks_criteria(int num_tasks, task_t **to_order, int (*criteria)(task_t *))
 {
     task_t **result = malloc(sizeof(task_t *) * num_tasks);
-    int ptr = 0;
 
     for (int i = 0; i < num_tasks; i++)
     {
@@ -616,16 +935,6 @@ task_t **order_tasks_list(int num_tasks, task_t *list, int (*criteria)(task_t *)
 /////////////////////////////
 // EXECUTIONS TIMES  ////////
 /////////////////////////////
-
-int compute_actual_execution_time(int procID, history_t history, augmented_task_t *elem)
-{
-    if (lookup_history(procID, elem), history)
-    {
-        return 9 * task->executionTime / 10;
-    }
-    else
-        return task->executionTime;
-}
 
 int compute_estimation_completion_time(int numProc, int whichDag)
 {

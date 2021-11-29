@@ -1,8 +1,6 @@
 #include "tests.h"
 
 void check_deadlines() {
-    int lateDags[dagsCount];
-    lateDags[1] = 1;
 
     int max_print = 10;
     for (int i = 0; i < dagsCount; i++)
