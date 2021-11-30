@@ -160,6 +160,8 @@ void scheduler()
 
     while (stop_time < INT_MAX)
     {
+        stop_time = start_time + 2*max_task_time;
+
         int n_dags_to_schedule = 0;
 
         // Find new dags ready
@@ -176,7 +178,15 @@ void scheduler()
             }
         }
 
-        stop_time = dag_arrivals[arrival_count];
+        if(n_dags_to_schedule == 0) {
+            if(arrival_count == dagsCount) {
+                break;
+            }
+            start_time = stop_time;
+            continue;
+        }
+
+        //stop_time = dag_arrivals[arrival_count];
 
         printf("----- start %i - stop %i - dags %i/%i -----\n", start_time, stop_time, n_dags_to_schedule, arrival_count);
 

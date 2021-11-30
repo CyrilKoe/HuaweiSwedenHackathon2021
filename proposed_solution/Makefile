@@ -46,7 +46,32 @@ run: all
 	$(APP_DIR)/$(TARGET) 10
 	$(APP_DIR)/$(TARGET) 11
 	$(APP_DIR)/$(TARGET) 12
-	
+
+
+config_8_cpus:
+	cat utils_8cpu.txt > utils.h
+
+config_6_cpus:
+	cat utils_6cpu.txt > utils.h
+
+run_8_cpus: config_8_cpus $(APP_DIR)/$(TARGET)
+	$(APP_DIR)/$(TARGET) 1
+	$(APP_DIR)/$(TARGET) 2
+	$(APP_DIR)/$(TARGET) 3
+	$(APP_DIR)/$(TARGET) 4
+	$(APP_DIR)/$(TARGET) 5
+	$(APP_DIR)/$(TARGET) 6
+
+run_6_cpus: config_6_cpus $(APP_DIR)/$(TARGET)
+	$(APP_DIR)/$(TARGET) 7
+	$(APP_DIR)/$(TARGET) 8
+	$(APP_DIR)/$(TARGET) 9
+	$(APP_DIR)/$(TARGET) 10
+	$(APP_DIR)/$(TARGET) 11
+	$(APP_DIR)/$(TARGET) 12
+
+submit: run_8_cpus run_6_cpus
+	./prepare_zip.sh
 
 clean:
 	-@rm -rvf $(OBJ_DIR)/*
