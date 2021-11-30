@@ -22,10 +22,26 @@ void check_deadlines() {
                             printf("Task %d begins before the arrival time of dag %d\n", taskId, input[dagIdx]->dagID);
                             return;
                         }
+                        if (!task->is_scheduled) {
+                            printf("Task %d is not scheduled (dag %i)\n", task->taskID, dagIdx);
+                            return;
+                        }
                     }
                     task = task->next;
                 }
             }
+        }
+    }
+
+    for (int dagIdx = 0; dagIdx < dagsCount; dagIdx++) {
+        task_t *t = input[dagIdx]->listOfTasks;
+        while (t != NULL) {
+            if (!t->is_scheduled) {
+                printf("Task %d is not scheduled (dag %i)\n", t->taskID, input[dagIdx]->dagID);
+                printf("DAG is scheduled : %s\n", input[dagIdx]->is_scheduled? "yes":"no");
+                return;
+            }
+            t = t->next;
         }
     }
 }
