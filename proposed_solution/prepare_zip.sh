@@ -17,6 +17,7 @@ make
 ./build/apps/App 10
 ./build/apps/App 11
 ./build/apps/App 12
+cat utils_8cpu.txt > utils.h
 
 cd submission 
 cp ../dag.c dag.cpp
