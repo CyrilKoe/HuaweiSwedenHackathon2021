@@ -162,7 +162,9 @@ void scheduler()
 
     while (stop_time < INT_MAX)
     {
-        stop_time = start_time + 3 * max_task_time;
+        /*stop_time = start_time + 2 * max_task_time;
+        if(stop_time > dag_arrivals[arrival_count])
+            stop_time = dag_arrivals[arrival_count];*/
 
         int n_dags_to_schedule = 0;
 
@@ -190,7 +192,7 @@ void scheduler()
             continue;
         }
 
-        //stop_time = dag_arrivals[arrival_count];
+        stop_time = dag_arrivals[arrival_count];
 
         printf("\n----- start %i - stop %i - dags %i/%i -----\n\n", start_time, stop_time, n_dags_to_schedule, arrival_count);
 
@@ -211,7 +213,7 @@ void scheduler()
         for (int i = 0; i < numberOfProcessors; i++)
         {
             sort_decision_list(decision_list);
-            print_decision_list(decision_list);
+            //print_decision_list(decision_list);
             add_cpu_to_first_decision(decision_list);
         }
         sort_decision_list(decision_list);
@@ -263,7 +265,7 @@ void scheduler()
 
         // Ending
         start_time = stop_time;
-        if (start_time > 1000000)
+        if (start_time > 6000000)
         {
             //break;
         }
@@ -508,7 +510,7 @@ augmented_task_t *dequeue(queue_dfs_t *queue)
     return result;
 }
 
-// Place the first element to be ready on the front
+// Place the first element to be ready on the front TODO ADD STOP TIME
 int place_first_element_ready(queue_dfs_t *queue, int cpu)
 {
     assert(queue->first != queue->last);
@@ -614,11 +616,39 @@ void add_cpu_to_first_decision(decision_list_t *list)
         }
     }
     int last_time = list->max_start_time[0];
+    //printf("run dag %i :\n", copy->aug_dag->dag->dagID);
     bool is_completed = copy->aug_dag->is_completed = multi_dfs(cpus, &(copy->queue), list->current_time, list->stop_time, history, false);
+    //printf("\n");
+
+    // Compute cpu usage
+    bool cpu_underused = false;
+    for (int i = 0; i < numberOfProcessors; i++)
+    {
+        if (cpus[i] != -1)
+        {
+            int run_time = compute_cpu_running_time(copy->aug_dag, i, list->current_time, list->stop_time);
+            //printf("[cpu] %i/%i [run] %i [on] %i ", i, i, run_time, list->stop_time - list->current_time);
+            float cpu_usage = -1.0f;
+            if(run_time == 0) {
+                cpu_usage = 0.0f;
+                cpu_underused = true;
+            }
+            else {
+                cpu_usage = (float)run_time / (float)(list->stop_time - list->current_time);
+                if(cpu_usage < 0.5f) {
+                    cpu_underused = true;
+                }
+            }
+
+            list->cpu_usage[0][i] = cpu_usage;
+            assert(cpu_usage <= 1.5f);
+            //printf("\n");
+        }
+    }
 
     int new_time = copy->aug_dag->dag->deadlineTime - list->current_time - compute_serial_completion_time(copy->aug_dag);
 
-    if (copy->aug_dag->is_completed || new_time == last_time)
+    if (copy->aug_dag->is_completed || new_time == last_time || cpu_underused)
     {
         list->max_start_time[0] = INT_MAX;
     }
@@ -629,17 +659,6 @@ void add_cpu_to_first_decision(decision_list_t *list)
     else
     {
         list->max_start_time[0] = new_time;
-    }
-
-    // Compute cpu usage
-    for (int i = 0; i < numberOfProcessors; i++)
-    {
-        if (cpus[i] != -1)
-        {
-            int run_time = compute_cpu_running_time(copy->aug_dag, i, list->current_time, list->stop_time);
-            list->cpu_usage[0][i] = (float)run_time / (float)(list->stop_time - list->current_time);
-            //printf("cpu %i run %i usage %f \n", i, run_time, list->cpu_usage[0][i]);
-        }
     }
 
     //remove_scheduling_dag(copy);
@@ -864,7 +883,7 @@ bool multi_dfs(int _allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int 
                 }
 
                 int ready_time = get_elem_ready_time(executed->sons[i], which_cpu);
-
+                // TODO RECONSIDER
                 if (ready_time < cpu_times[which_cpu])
                 {
                     ready_time = cpu_times[which_cpu];
@@ -949,7 +968,7 @@ void add_roots_to_dag(int whichDag)
 
 int compute_cpu_running_time(augmented_dag_t *aug_dag, int cpu, int start_time, int stop_time)
 {
-    int result;
+    int result = 0;
     for (int i = 0; i < tasksPerGraph; i++)
     {
         if (aug_dag->elems[i] && aug_dag->elems[i]->which_pn == cpu)
