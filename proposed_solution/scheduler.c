@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <math.h>
 
 /////////////////////////////
 // ENUMS ////////////////////
@@ -55,6 +56,7 @@ typedef struct decision_list
     scheduling_dag_t **sch_dag;
     int *max_start_time;
     int *cpu_allocated;
+    float **cpu_usage; // size nb of proc
     int current_time;
     int stop_time;
 } decision_list_t;
@@ -160,7 +162,7 @@ void scheduler()
 
     while (stop_time < INT_MAX)
     {
-        stop_time = start_time + 2*max_task_time;
+        stop_time = start_time + 3 * max_task_time;
 
         int n_dags_to_schedule = 0;
 
@@ -178,8 +180,10 @@ void scheduler()
             }
         }
 
-        if(n_dags_to_schedule == 0) {
-            if(arrival_count == dagsCount) {
+        if (n_dags_to_schedule == 0)
+        {
+            if (arrival_count == dagsCount)
+            {
                 break;
             }
             start_time = stop_time;
@@ -188,7 +192,7 @@ void scheduler()
 
         //stop_time = dag_arrivals[arrival_count];
 
-        printf("----- start %i - stop %i - dags %i/%i -----\n", start_time, stop_time, n_dags_to_schedule, arrival_count);
+        printf("\n----- start %i - stop %i - dags %i/%i -----\n\n", start_time, stop_time, n_dags_to_schedule, arrival_count);
 
         decision_list_t *decision_list = create_decision_list(n_dags_to_schedule, start_time, stop_time);
 
@@ -242,9 +246,9 @@ void scheduler()
             }
             last_cpu_allocated += cpus_to_allocate;
 
-            printf("DAG %i [deadline] %i - ", actual_dag->aug_dag->dag->dagID, actual_dag->aug_dag->dag->deadlineTime);
+            //printf("DAG %i [deadline] %i - ", actual_dag->aug_dag->dag->dagID, actual_dag->aug_dag->dag->deadlineTime);
             actual_dag->aug_dag->is_completed = multi_dfs(cpus, &(actual_dag->queue), start_time, stop_time, history, true);
-            printf("\n");
+            //printf("\n");
         }
 
         remove_decision_list(decision_list);
@@ -539,6 +543,7 @@ decision_list_t *create_decision_list(int size, int current_time, int stop_time)
     decision_list_t *result = safe_malloc(sizeof(decision_list_t));
     result->size = size;
     result->cpu_allocated = safe_malloc(size * sizeof(int));
+    result->cpu_usage = safe_malloc(size * sizeof(float *));
     result->max_start_time = safe_malloc(size * sizeof(int));
     result->sch_dag = safe_malloc(size * sizeof(scheduling_dag_t *));
     result->current_time = current_time;
@@ -548,6 +553,11 @@ decision_list_t *create_decision_list(int size, int current_time, int stop_time)
         result->cpu_allocated[i] = 0;
         result->max_start_time[i] = 0;
         result->sch_dag[i] = NULL;
+        result->cpu_usage[i] = malloc(numberOfProcessors * sizeof(float));
+        for (int j = 0; j < numberOfProcessors; j++)
+        {
+            result->cpu_usage[i][j] = -1.0f;
+        }
     }
     return result;
 }
@@ -627,7 +637,8 @@ void add_cpu_to_first_decision(decision_list_t *list)
         if (cpus[i] != -1)
         {
             int run_time = compute_cpu_running_time(copy->aug_dag, i, list->current_time, list->stop_time);
-            printf("cpu %i run %i usage %f \n", i, run_time, (float)run_time / (float)(list->stop_time - list->current_time));
+            list->cpu_usage[0][i] = (float)run_time / (float)(list->stop_time - list->current_time);
+            //printf("cpu %i run %i usage %f \n", i, run_time, list->cpu_usage[0][i]);
         }
     }
 
@@ -636,10 +647,18 @@ void add_cpu_to_first_decision(decision_list_t *list)
 
 void print_decision_list(decision_list_t *list)
 {
-    printf("start %i end %i size %i : ", list->current_time, list->stop_time, list->size);
+    printf("-> start %i end %i size %i : \n", list->current_time, list->stop_time, list->size);
     for (int i = 0; i < list->size; i++)
     {
-        printf("%i : [%i, %i, %i, (%i)] , ", i, list->cpu_allocated[i], list->max_start_time[i], list->sch_dag[i]->aug_dag->dag->dagID, list->sch_dag[i]->aug_dag->is_completed);
+        printf("(%i) : [%i, {", list->sch_dag[i]->aug_dag->dag->dagID, list->max_start_time[i]);
+        for (int j = 0; j < numberOfProcessors; j++)
+        {
+            if (list->cpu_usage[i][j] >= 0.0f)
+            {
+                printf("%0.2f,", list->cpu_usage[i][j]);
+            }
+        }
+        printf("}] - ");
     }
     printf("\n");
 }
@@ -656,12 +675,17 @@ void sort_decision_list(decision_list_t *list)
                 scheduling_dag_t *temp_dag = list->sch_dag[i];
                 int temp_max_start = list->max_start_time[i];
                 int temp_cpu_alloc = list->cpu_allocated[i];
+                int *temp_usages;
+                temp_usages = list->cpu_usage[i];
                 list->cpu_allocated[i] = list->cpu_allocated[j];
                 list->max_start_time[i] = list->max_start_time[j];
                 list->sch_dag[i] = list->sch_dag[j];
+                list->cpu_usage[i] = list->cpu_usage[j];
+
                 list->cpu_allocated[j] = temp_cpu_alloc;
                 list->max_start_time[j] = temp_max_start;
                 list->sch_dag[j] = temp_dag;
+                list->cpu_usage[j] = temp_usages;
             }
         }
     }
@@ -734,7 +758,7 @@ int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *his
 {
     if (write)
     {
-        printf("(%i-%i) ", pn, elem->task->taskID);
+        //printf("(%i-%i) ", pn, elem->task->taskID);
     }
     assert(is_elem_ready(elem, time, pn));
     assert(!elem->is_scheduled);
