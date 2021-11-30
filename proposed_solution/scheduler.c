@@ -19,6 +19,7 @@ typedef struct augmented_task
     bool is_scheduled;
     int which_pn;
     int start_time;
+    int exe_time;
     int num_sons;
     struct augmented_task **sons;
     int num_parents;
@@ -60,6 +61,17 @@ typedef struct decision_list
 
 struct ProcessorSchedule output[numberOfProcessors];
 
+static void *safe_malloc(size_t n)
+{
+    void *p = malloc(n);
+    if (!p)
+    {
+        fprintf(stderr, "Out of memory(%ul bytes)\n", (unsigned long)n);
+        exit(EXIT_FAILURE);
+    }
+    return p;
+}
+
 void link_dependancies_to_tasks(int whichDag);
 void add_roots_to_dag(int whichDag);
 
@@ -91,6 +103,7 @@ int is_elem_ready(augmented_task_t *elem, int time, int pn);
 int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write);
 bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int start_time, int stop_time, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write);
 int compute_serial_completion_time(augmented_dag_t *aug_dag);
+int compute_cpu_running_time(augmented_dag_t *aug_dag, int cpu, int start_time, int stop_time);
 decision_list_t *create_decision_list(int size, int current_time, int stop_time);
 void remove_decision_list(decision_list_t *list);
 void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag);
@@ -106,10 +119,11 @@ void scheduler()
 {
     int num_tasks = 0;
 
-    int *dag_arrivals = malloc((1 + dagsCount) * sizeof(int));
+    int *dag_arrivals = safe_malloc((1 + dagsCount) * sizeof(int));
 
-    scheduling_dag_t **scheduling_dags = malloc(sizeof(scheduling_dag_t *) * dagsCount);
+    scheduling_dag_t **scheduling_dags = safe_malloc(sizeof(scheduling_dag_t *) * dagsCount);
 
+    int max_task_time = 0;
     for (int i = 0; i < dagsCount; i++)
     {
         scheduling_dags[i] = NULL;
@@ -117,7 +131,17 @@ void scheduler()
         num_tasks += input[i]->tasksCount;
         link_dependancies_to_tasks(i);
         add_roots_to_dag(i);
+        task_t *task = input[i]->firstTask;
+        while (task != NULL)
+        {
+            if (task->executionTime > max_task_time)
+            {
+                max_task_time = task->executionTime;
+            }
+            task = task->next;
+        }
     }
+    printf("Max task time = %i\n", max_task_time);
     dag_arrivals[dagsCount] = INT_MAX;
     shitty_sort(dag_arrivals, dagsCount);
 
@@ -137,6 +161,7 @@ void scheduler()
     while (stop_time < INT_MAX)
     {
         int n_dags_to_schedule = 0;
+
         // Find new dags ready
         for (int i = 0; i < dagsCount; i++)
         {
@@ -175,8 +200,11 @@ void scheduler()
             print_decision_list(decision_list);
             add_cpu_to_first_decision(decision_list);
         }
+        sort_decision_list(decision_list);
+        print_decision_list(decision_list);
 
         // Do the actual scheduling
+        int last_cpu_allocated = 0;
         for (int i = 0; i < decision_list->size; i++)
         {
             scheduling_dag_t *actual_dag = decision_list->sch_dag[i];
@@ -189,7 +217,11 @@ void scheduler()
             int cpus[numberOfProcessors];
             for (int i = 0; i < numberOfProcessors; i++)
             {
-                if (cpus_to_allocate-- > 0)
+                if (i < last_cpu_allocated)
+                {
+                    cpus[i] = -1;
+                }
+                else if (i < last_cpu_allocated + cpus_to_allocate)
                 {
                     cpus[i] = i;
                 }
@@ -198,8 +230,9 @@ void scheduler()
                     cpus[i] = -1;
                 }
             }
+            last_cpu_allocated += cpus_to_allocate;
 
-            printf("DAG %i - ", actual_dag->aug_dag->dag->dagID);
+            printf("DAG %i [deadline] %i - ", actual_dag->aug_dag->dag->dagID, actual_dag->aug_dag->dag->deadlineTime);
             actual_dag->aug_dag->is_completed = multi_dfs(cpus, &(actual_dag->queue), start_time, stop_time, history, true);
             printf("\n");
         }
@@ -279,16 +312,17 @@ void shitty_sort(int *T, int N_arr)
 
 augmented_task_t *new_augmented_task(task_t *task)
 {
-    augmented_task_t *result = malloc(sizeof(augmented_task_t));
+    augmented_task_t *result = safe_malloc(sizeof(augmented_task_t));
     result->task = task;
     result->which_pn = -1;
     result->start_time = -1;
+    result->exe_time = -1;
     result->num_sons = task->num_sons;
     result->num_parents = task->num_parents;
-    result->sons = malloc(result->num_sons * sizeof(augmented_task_t *));
+    result->sons = safe_malloc(result->num_sons * sizeof(augmented_task_t *));
     for (int i = 0; i < result->num_sons; i++)
         result->sons[i] = NULL;
-    result->parents = malloc(result->num_parents * sizeof(augmented_task_t *));
+    result->parents = safe_malloc(result->num_parents * sizeof(augmented_task_t *));
     for (int i = 0; i < result->num_parents; i++)
         result->parents[i] = NULL;
     return result;
@@ -307,7 +341,7 @@ void remove_augmented_task(augmented_task_t *aug_task)
 
 augmented_dag_t *new_augmented_dag(dag_t *dag)
 {
-    augmented_dag_t *result = malloc(sizeof(augmented_dag_t));
+    augmented_dag_t *result = safe_malloc(sizeof(augmented_dag_t));
     result->dag = dag;
     result->is_completed = false;
     result->size = dag->tasksCount;
@@ -374,7 +408,7 @@ void remove_augmented_dag(augmented_dag_t *aug_dag)
 
 scheduling_dag_t *new_scheduling_dag(dag_t *dag)
 {
-    scheduling_dag_t *result = malloc(sizeof(scheduling_dag_t));
+    scheduling_dag_t *result = safe_malloc(sizeof(scheduling_dag_t));
     result->aug_dag = new_augmented_dag(dag);
     init_queue(&result->queue);
     for (int i = 0; i < result->aug_dag->root->num_sons; i++)
@@ -397,7 +431,7 @@ void remove_scheduling_dag(scheduling_dag_t *sch_dag)
 
 scheduling_dag_t *copy_scheduling_dag(scheduling_dag_t *origin)
 {
-    scheduling_dag_t *result = malloc(sizeof(scheduling_dag_t));
+    scheduling_dag_t *result = safe_malloc(sizeof(scheduling_dag_t));
     for (int i = 0; i < numberOfProcessors; i++)
     {
         result->cpus[i] = origin->cpus[i];
@@ -492,11 +526,11 @@ int place_first_element_ready(queue_dfs_t *queue, int cpu)
 
 decision_list_t *create_decision_list(int size, int current_time, int stop_time)
 {
-    decision_list_t *result = malloc(sizeof(decision_list_t));
+    decision_list_t *result = safe_malloc(sizeof(decision_list_t));
     result->size = size;
-    result->cpu_allocated = malloc(size * sizeof(int));
-    result->max_start_time = malloc(size * sizeof(int));
-    result->sch_dag = malloc(size * sizeof(scheduling_dag_t *));
+    result->cpu_allocated = safe_malloc(size * sizeof(int));
+    result->max_start_time = safe_malloc(size * sizeof(int));
+    result->sch_dag = safe_malloc(size * sizeof(scheduling_dag_t *));
     result->current_time = current_time;
     result->stop_time = stop_time;
     for (int i = 0; i < size; i++)
@@ -560,20 +594,34 @@ void add_cpu_to_first_decision(decision_list_t *list)
         }
     }
     int last_time = list->max_start_time[0];
-    copy->aug_dag->is_completed = multi_dfs(cpus, &(copy->queue), list->current_time, list->stop_time, history, false);
+    bool is_completed = copy->aug_dag->is_completed = multi_dfs(cpus, &(copy->queue), list->current_time, list->stop_time, history, false);
+
     int new_time = copy->aug_dag->dag->deadlineTime - list->current_time - compute_serial_completion_time(copy->aug_dag);
 
-    if(copy->aug_dag->is_completed || new_time == last_time) {
+    if (copy->aug_dag->is_completed || new_time == last_time)
+    {
         list->max_start_time[0] = INT_MAX;
     }
-    else if ((float) new_time / (float) last_time > 0.7f) {
+    else if ((float)new_time / (float)last_time > 0.7f)
+    {
         list->max_start_time[0] = new_time * 10;
     }
-    else {
+    else
+    {
         list->max_start_time[0] = new_time;
     }
 
-    remove_scheduling_dag(copy);
+    // Compute cpu usage
+    for (int i = 0; i < numberOfProcessors; i++)
+    {
+        if (cpus[i] != -1)
+        {
+            int run_time = compute_cpu_running_time(copy->aug_dag, i, list->current_time, list->stop_time);
+            printf("cpu %i run %i usage %f \n", i, run_time, (float)run_time / (float)(list->stop_time - list->current_time));
+        }
+    }
+
+    //remove_scheduling_dag(copy);
 }
 
 void print_decision_list(decision_list_t *list)
@@ -674,8 +722,9 @@ int get_actual_exec_time(augmented_task_t *elem, int pn, augmented_task_t *histo
 
 int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write)
 {
-    if(write) {
-        printf("%i ",elem->task->taskID);
+    if (write)
+    {
+        printf("(%i-%i) ", pn, elem->task->taskID);
     }
     assert(is_elem_ready(elem, time, pn));
     assert(!elem->is_scheduled);
@@ -684,8 +733,11 @@ int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *his
     elem->which_pn = pn;
 
     int exetime = get_actual_exec_time(elem, pn, history);
+    elem->exe_time = exetime;
 
-    if(write) {
+    if (write)
+    {
+        //assert(time + exetime <= input[elem->task->whichDag]->deadlineTime);
         int n_write = output[pn].numberOfTasks;
         output[pn].taskIDs[n_write] = elem->task->taskID;
         output[pn].startTime[n_write] = time;
@@ -695,19 +747,21 @@ int execute_elem(augmented_task_t *elem, int time, int pn, augmented_task_t *his
         elem->task->is_scheduled = true;
     }
 
-    return time + exetime;
+    return exetime;
 }
 
 /////////////////////////////
 // DFS  /////////////////////
 /////////////////////////////
 
-bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int start_time, int stop_time, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write)
+bool multi_dfs(int _allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int start_time, int stop_time, augmented_task_t *history[historyOfProcessor][numberOfProcessors], bool write)
 {
+    int allocated_cpus[numberOfProcessors];
     int cpu_times[numberOfProcessors];
     augmented_task_t *to_execute[numberOfProcessors];
     for (int i = 0; i < numberOfProcessors; i++)
     {
+        allocated_cpus[i] = _allocated_cpus[i];
         cpu_times[i] = start_time;
         to_execute[i] = NULL;
     }
@@ -719,7 +773,7 @@ bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
         for (int which_cpu = 0; which_cpu < numberOfProcessors; which_cpu++)
         {
             // Non allocated or busy
-            if (allocated_cpus[which_cpu] == -1 || cpu_times[which_cpu] > current_time)
+            if (allocated_cpus[which_cpu] == -1 || cpu_times[which_cpu] > current_time || cpu_times[which_cpu] >= stop_time)
             {
                 continue;
             }
@@ -733,24 +787,31 @@ bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
                     cpu_times[which_cpu] = -1;
                     continue;
                 }
-                int min_ready_time = place_first_element_ready(queue, which_cpu);
 
+                int min_ready_time = place_first_element_ready(queue, which_cpu);
                 if (min_ready_time > cpu_times[which_cpu])
                 {
                     cpu_times[which_cpu] = min_ready_time;
                     continue;
                 }
 
+                if (min_ready_time < cpu_times[which_cpu])
+                {
+                    min_ready_time = cpu_times[which_cpu];
+                }
+
                 int end_execution_time = min_ready_time + get_actual_exec_time(queue->elems[queue->first], which_cpu, history);
                 if (end_execution_time >= stop_time)
                 {
+                    cpu_times[which_cpu] = -1;
                     continue;
                 }
 
                 to_execute[which_cpu] = dequeue(queue);
             }
             // Run
-            cpu_times[which_cpu] = execute_elem(to_execute[which_cpu], current_time, which_cpu, history, write);
+            cpu_times[which_cpu] = cpu_times[which_cpu] + execute_elem(to_execute[which_cpu], current_time, which_cpu, history, write);
+            assert(cpu_times[which_cpu] <= stop_time);
 
             augmented_task_t *executed = to_execute[which_cpu];
             for (int hist = 0; hist < historyOfProcessor - 1; hist++)
@@ -768,9 +829,16 @@ bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
                     continue;
                 }
 
-                int end_time = get_elem_ready_time(executed->sons[i], which_cpu) + get_actual_exec_time(executed->sons[i], which_cpu, history);
+                int ready_time = get_elem_ready_time(executed->sons[i], which_cpu);
 
-                if (end_time < stop_time && is_elem_ready(executed->sons[i], cpu_times[which_cpu], which_cpu) && to_execute[which_cpu] == NULL)
+                if (ready_time < cpu_times[which_cpu])
+                {
+                    ready_time = cpu_times[which_cpu];
+                }
+
+                int end_time = ready_time + get_actual_exec_time(executed->sons[i], which_cpu, history);
+
+                if (ready_time <= cpu_times[which_cpu] && end_time < stop_time && is_elem_ready(executed->sons[i], cpu_times[which_cpu], which_cpu) && to_execute[which_cpu] == NULL)
                 {
                     to_execute[which_cpu] = executed->sons[i];
                 }
@@ -789,11 +857,11 @@ bool multi_dfs(int allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int s
                 continue;
             if (to_execute[which_cpu] != NULL)
                 no_tasks_to_do = false;
-            if (cpu_times[which_cpu] < next_time)
+            if (cpu_times[which_cpu] < next_time && cpu_times[which_cpu] > current_time)
                 next_time = cpu_times[which_cpu];
         }
         // Nothing happening
-        if (current_time == next_time && no_tasks_to_do)
+        if (next_time >= stop_time || (current_time == next_time && no_tasks_to_do))
         {
             break;
         }
@@ -825,7 +893,7 @@ void add_roots_to_dag(int whichDag)
         if (currentTask->num_parents == 0)
         {
             // Create a fake dependancy
-            dependancy_t *dep = malloc(sizeof(dependancy_t));
+            dependancy_t *dep = safe_malloc(sizeof(dependancy_t));
             dep->beforeID = -1;
             dep->afterID = currentTask->taskID;
             dep->transferTime = 0;
@@ -844,6 +912,26 @@ void add_roots_to_dag(int whichDag)
 /////////////////////////////
 // CPU ALLOCATION ///////////
 /////////////////////////////
+
+int compute_cpu_running_time(augmented_dag_t *aug_dag, int cpu, int start_time, int stop_time)
+{
+    int result;
+    for (int i = 0; i < tasksPerGraph; i++)
+    {
+        if (aug_dag->elems[i] && aug_dag->elems[i]->which_pn == cpu)
+        {
+            if (aug_dag->elems[i]->start_time >= start_time)
+            {
+                int exe_time = aug_dag->elems[i]->exe_time;
+                if (start_time + exe_time <= stop_time)
+                {
+                    result += exe_time;
+                }
+            }
+        }
+    }
+    return result;
+}
 
 int compute_serial_completion_time(augmented_dag_t *aug_dag)
 {
@@ -900,7 +988,7 @@ void quickSort(task_t **arr, int low, int high, int (*criteria)(task_t *))
 // O(nlog(n)) Order the taks sof the DAG nb dagCount by the criteria
 task_t **ordered_tasks_criteria(int num_tasks, task_t **to_order, int (*criteria)(task_t *))
 {
-    task_t **result = malloc(sizeof(task_t *) * num_tasks);
+    task_t **result = safe_malloc(sizeof(task_t *) * num_tasks);
 
     for (int i = 0; i < num_tasks; i++)
     {
@@ -914,7 +1002,7 @@ task_t **ordered_tasks_criteria(int num_tasks, task_t **to_order, int (*criteria
 
 task_t **order_tasks_list(int num_tasks, task_t *list, int (*criteria)(task_t *))
 {
-    task_t **result = malloc(sizeof(task_t *) * num_tasks);
+    task_t **result = safe_malloc(sizeof(task_t *) * num_tasks);
     int ptr = 0;
 
     task_t *currentTask = list;
@@ -971,7 +1059,7 @@ struct queue_item
 /*
 int average_parallel_nodes(int dagId, int start_time, int stop_time)
 {
-    struct queue_item **queue = malloc(sizeof(struct queue_item *) * (input[dagId]->tasksCount + 1)); // Count the root
+    struct queue_item **queue = safe_malloc(sizeof(struct queue_item *) * (input[dagId]->tasksCount + 1)); // Count the root
     for (int i = 0; i < input[dagId]->tasksCount; i++)
     {
         queue[i] = NULL;
@@ -980,7 +1068,7 @@ int average_parallel_nodes(int dagId, int start_time, int stop_time)
     int queue_start = 0;
     int queue_end = 0;
 
-    struct queue_item *root_item = malloc(sizeof(struct queue_item));
+    struct queue_item *root_item = safe_malloc(sizeof(struct queue_item));
     root_item->depth = 0;
     root_item->task = input[dagId]->root;
     root_item->start_time = start_time;
@@ -1029,7 +1117,7 @@ int average_parallel_nodes(int dagId, int start_time, int stop_time)
             if (already_there)
                 continue;
 
-            struct queue_item *next_item = malloc(sizeof(struct queue_item));
+            struct queue_item *next_item = safe_malloc(sizeof(struct queue_item));
             next_item->depth = item->depth + 1;
             next_item->task = item->task->sons[i]->afterTask;
 

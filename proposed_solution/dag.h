@@ -36,7 +36,7 @@ typedef struct DAG{
     int dagID;
     int dagType; 
     int arrivalTime;
-    int deadlineTime;
+    int deadlineTime; // ABSOLUTE
     int tasksCount;
     task_t * listOfTasks; // list of all tasks (just their IDs and execution times, order doesn't matter) of DAG
     dependancy_t * listOfDependencies;// all edges (dependencies) of DAG (NULL if there are no dependencies)
