@@ -729,7 +729,7 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
     // Save the allocated cpus into the decision list
     for(int i = 0; i < numberOfProcessors; i++)
     {
-        copy->cpus[i] = cpus[i];
+        list->cpus[dag_to_exec][i] = cpus[i];
     }
 
     return 0;
@@ -743,7 +743,7 @@ void print_decision_list(decision_list_t *list, int start_time, int stop_time)
         printf("(%i) : [(r) %i, (m) %i, (d) %i {", list->sch_dag[i]->aug_dag->dag->dagID, list->remaining_time[i], list->max_start_time[i], list->sch_dag[i]->aug_dag->dag->deadlineTime);
         for (int j = 0; j < numberOfProcessors; j++)
         {
-            if (list->cpus[i][j])
+            if (list->cpus[i][j] != -1)
             {
                 printf("(%i) %0.2f, ",list->cpus[i][j], list->cpu_usage[i][j]);
             }

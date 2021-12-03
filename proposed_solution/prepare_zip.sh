@@ -7,16 +7,13 @@ make
 ./build/apps/App 2
 ./build/apps/App 3
 ./build/apps/App 4
-./build/apps/App 5
-./build/apps/App 6
 cat utils_6cpu.txt > utils.h
 make
+./build/apps/App 5
+./build/apps/App 6
 ./build/apps/App 7
 ./build/apps/App 8
 ./build/apps/App 9
-./build/apps/App 10
-./build/apps/App 11
-./build/apps/App 12
 cat utils_8cpu.txt > utils.h
 
 cd submission 
