@@ -171,9 +171,10 @@ void scheduler()
         if(stop_time > dag_arrivals[arrival_count])
             stop_time = dag_arrivals[arrival_count];*/
 
+
         cpus_allocated_t cpus_allocated;
         for(int i = 0; i < numberOfProcessors; i++) {
-            cpus_allocated.new_start_time[i] = 0;
+            cpus_allocated.new_start_time[i] = start_time;
             cpus_allocated.dag_idx[i]= -1;
         }
         
@@ -262,10 +263,11 @@ void scheduler()
                 scheduling_dag_t *actual_dag = decision_list->sch_dag[i];
                 // METTRE A JOUR LES NEW START TIMES
                 actual_dag->aug_dag->is_completed = multi_dfs(decision_list->cpus[i], &(actual_dag->queue), cpus_allocated.new_start_time, stop_time, history, true);
+
                 //printf("\n");
             }
 
-            // remove_decision_list(decision_list);
+            //remove_decision_list(decision_list);
             
         } while ( false);
         // Ending
@@ -644,7 +646,7 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
     int cpus[numberOfProcessors];
     for (int i = 0; i < numberOfProcessors; i++)
     {
-        if (cpus_allocated->dag_idx[i] == *which_dag || *which_dag == i)
+        if (cpus_allocated->dag_idx[i] == *which_dag || which_cpu == i)
         {
             cpus[i] = i;
         }
@@ -721,7 +723,6 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
                     endTime = t->start_time + t->exe_time;
                 }
             }
-            return 0;
         }
     }
 
@@ -742,9 +743,9 @@ void print_decision_list(decision_list_t *list, int start_time, int stop_time)
         printf("(%i) : [(r) %i, (m) %i, (d) %i {", list->sch_dag[i]->aug_dag->dag->dagID, list->remaining_time[i], list->max_start_time[i], list->sch_dag[i]->aug_dag->dag->deadlineTime);
         for (int j = 0; j < numberOfProcessors; j++)
         {
-            if (list->cpu_usage[i][j] >= 0.0f)
+            if (list->cpus[i][j])
             {
-                printf("%0.2f,", list->cpu_usage[i][j]);
+                printf("(%i) %0.2f, ",list->cpus[i][j], list->cpu_usage[i][j]);
             }
         }
         printf("}] - ");
