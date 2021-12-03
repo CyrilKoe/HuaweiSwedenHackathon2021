@@ -55,6 +55,7 @@ typedef struct decision_list
     int size;
     scheduling_dag_t **sch_dag;
     int *max_start_time;
+    int *remaining_time;
     int *cpu_allocated;
     float **cpu_usage; // size nb of proc
     int current_time;
@@ -195,6 +196,9 @@ void scheduler()
         decision_list_t *decision_list;
         // TODO STOP TIME SELECTION
         stop_time = dag_arrivals[arrival_count];
+        if(stop_time - start_time > 2*max_task_time) {
+            stop_time = start_time + 2*max_task_time;
+        }
         int old_stop_time = -1;
 
         while (stop_time != old_stop_time)
@@ -214,23 +218,36 @@ void scheduler()
                 add_to_decision_list(decision_list, scheduling_dags[i]);
             }
 
-            for (int i = 0; i < numberOfProcessors; i++)
+            int actually_allocated = 0;
+            for (int i = 0; i < 2*numberOfProcessors; i++)
             {
+                if(actually_allocated == numberOfProcessors) {
+                    break;
+                }
                 sort_decision_list(decision_list);
                 print_decision_list(decision_list);
-                stop_time = add_cpu_to_first_decision(decision_list);
+                int possible_stop_time = add_cpu_to_first_decision(decision_list);
+                if(possible_stop_time == -1) {
+                    continue;
+                }
+                actually_allocated++;
+                /*if (possible_stop_time - start_time > 100000)
+                {
+                    stop_time = possible_stop_time;
+                }
                 if (stop_time != old_stop_time)
                 {
-                    //break;
-                }
+                    break;
+                }*/
             }
-            break;
+            //break;
         }
 
         sort_decision_list(decision_list);
         print_decision_list(decision_list);
 
-        stop_time += 1;
+        if (stop_time != INT_MAX)
+            stop_time += 1;
 
         // Do the actual scheduling
         int last_cpu_allocated = 0;
@@ -560,6 +577,7 @@ decision_list_t *create_decision_list(int size, int current_time, int stop_time)
     result->cpu_allocated = safe_malloc(size * sizeof(int));
     result->cpu_usage = safe_malloc(size * sizeof(float *));
     result->max_start_time = safe_malloc(size * sizeof(int));
+    result->remaining_time = safe_malloc(size * sizeof(int));
     result->sch_dag = safe_malloc(size * sizeof(scheduling_dag_t *));
     result->current_time = current_time;
     result->stop_time = stop_time;
@@ -567,6 +585,7 @@ decision_list_t *create_decision_list(int size, int current_time, int stop_time)
     {
         result->cpu_allocated[i] = 0;
         result->max_start_time[i] = 0;
+        result->remaining_time[i] = 0;
         result->sch_dag[i] = NULL;
         result->cpu_usage[i] = malloc(numberOfProcessors * sizeof(float));
         for (int j = 0; j < numberOfProcessors; j++)
@@ -581,6 +600,7 @@ void remove_decision_list(decision_list_t *list)
 {
     free(list->cpu_allocated);
     free(list->max_start_time);
+    free(list->remaining_time);
     free(list->sch_dag);
     free(list);
 }
@@ -593,7 +613,8 @@ void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag)
         {
             list->sch_dag[i] = original_dag;
             list->cpu_allocated[i] = 0;
-            list->max_start_time[i] = original_dag->aug_dag->dag->deadlineTime - list->current_time - compute_serial_completion_time(original_dag->aug_dag);
+            list->max_start_time[i] = original_dag->aug_dag->dag->deadlineTime - (int)(1.1f * list->current_time) - compute_serial_completion_time(original_dag->aug_dag);
+            list->remaining_time[i] = compute_serial_completion_time(original_dag->aug_dag);
             break;
         }
     }
@@ -630,9 +651,8 @@ int add_cpu_to_first_decision(const decision_list_t *list)
         dag_to_exec = 0; // insert heuristic possible
     }
 
-    list->cpu_allocated[dag_to_exec] += 1;
     scheduling_dag_t *copy = copy_scheduling_dag(list->sch_dag[dag_to_exec]);
-    int cpus_to_allocate = list->cpu_allocated[dag_to_exec];
+    int cpus_to_allocate = list->cpu_allocated[dag_to_exec] + 1;
     // Allocate CPUs
     int cpus[numberOfProcessors];
     for (int i = 0; i < numberOfProcessors; i++)
@@ -658,6 +678,7 @@ int add_cpu_to_first_decision(const decision_list_t *list)
     int last_time = list->max_start_time[dag_to_exec];
     //printf("run dag %i :\n", copy->aug_dag->dag->dagID);
     bool is_completed = copy->aug_dag->is_completed = multi_dfs(cpus, &(copy->queue), list->current_time, list->stop_time, history, false);
+    list->remaining_time[dag_to_exec] = compute_serial_completion_time(copy->aug_dag);
     //printf("\n");
 
     // Compute cpu usage
@@ -677,10 +698,15 @@ int add_cpu_to_first_decision(const decision_list_t *list)
             else
             {
                 cpu_usage = (float)run_time / (float)(list->stop_time - list->current_time);
-                if (cpu_usage < 0.5f)
+                if (cpu_usage < 0.3f)
                 {
                     cpu_underused = true;
                 }
+            }
+
+            if(cpu_underused && !copy->aug_dag->is_completed) {
+                list->max_start_time[dag_to_exec] = INT_MAX;
+                return -1;
             }
 
             list->cpu_usage[dag_to_exec][i] = cpu_usage;
@@ -689,8 +715,11 @@ int add_cpu_to_first_decision(const decision_list_t *list)
         }
     }
 
+    list->cpu_allocated[dag_to_exec] += 1;
+
     int time_to_completion = compute_serial_completion_time(copy->aug_dag);
-    int new_time = copy->aug_dag->dag->deadlineTime - list->current_time - time_to_completion;
+    int new_time = copy->aug_dag->dag->deadlineTime - (int)(1.1 * list->current_time) - time_to_completion;
+    list->max_start_time[dag_to_exec] = new_time;
 
     if (copy->aug_dag->is_completed || new_time == last_time || cpu_underused)
     {
@@ -709,15 +738,19 @@ int add_cpu_to_first_decision(const decision_list_t *list)
             return endTime;
         }
     }
+
+    return list->stop_time;
     /* else if ((float)new_time / (float)last_time > 0.7f)
     {
         list->max_start_time[dag_to_exec] = new_time * 10;
     }*/
+    /*
     else
     {
         list->max_start_time[dag_to_exec] = new_time;
     }
     return list->stop_time;
+    */
     //remove_scheduling_dag(copy);
 }
 
@@ -726,7 +759,7 @@ void print_decision_list(decision_list_t *list)
     printf("-> start %i end %i size %i : \n", list->current_time, list->stop_time, list->size);
     for (int i = 0; i < list->size; i++)
     {
-        printf("(%i) : [%i, {", list->sch_dag[i]->aug_dag->dag->dagID, list->max_start_time[i]);
+        printf("(%i) : [%i, %i, {", list->sch_dag[i]->aug_dag->dag->dagID, list->remaining_time[i], list->max_start_time[i]);
         for (int j = 0; j < numberOfProcessors; j++)
         {
             if (list->cpu_usage[i][j] >= 0.0f)
@@ -750,16 +783,19 @@ void sort_decision_list(decision_list_t *list)
             {
                 scheduling_dag_t *temp_dag = list->sch_dag[i];
                 int temp_max_start = list->max_start_time[i];
+                int temp_remaining_time = list->remaining_time[i];
                 int temp_cpu_alloc = list->cpu_allocated[i];
                 int *temp_usages;
                 temp_usages = list->cpu_usage[i];
                 list->cpu_allocated[i] = list->cpu_allocated[j];
                 list->max_start_time[i] = list->max_start_time[j];
+                list->remaining_time[i] = list->remaining_time[j];
                 list->sch_dag[i] = list->sch_dag[j];
                 list->cpu_usage[i] = list->cpu_usage[j];
 
                 list->cpu_allocated[j] = temp_cpu_alloc;
                 list->max_start_time[j] = temp_max_start;
+                list->remaining_time[j] = temp_remaining_time;
                 list->sch_dag[j] = temp_dag;
                 list->cpu_usage[j] = temp_usages;
             }
