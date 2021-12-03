@@ -98,7 +98,7 @@ void init_queue(queue_dfs_t *queue);
 void remove_queue_dfs(queue_dfs_t *queue);
 void enqueue(queue_dfs_t *queue, augmented_task_t *elem);
 augmented_task_t *dequeue(queue_dfs_t *queue);
-int place_first_element_ready(queue_dfs_t *queue, int cpu);
+int place_first_element_ready(queue_dfs_t *queue, int cpu, int current_time, int stop_time);
 bool lookup_history(augmented_task_t *element, int pn, augmented_task_t *history[historyOfProcessor][numberOfProcessors]);
 int get_elem_ready_time(augmented_task_t *elem, int pn);
 int are_parents_scheduled(augmented_task_t *elem);
@@ -195,10 +195,11 @@ void scheduler()
 
         decision_list_t *decision_list;
         // TODO STOP TIME SELECTION
+        
         stop_time = dag_arrivals[arrival_count];
-        if(stop_time - start_time > 2*max_task_time) {
+        /*if(stop_time - start_time > 2*max_task_time) {
             stop_time = start_time + 2*max_task_time;
-        }
+        }*/
         int old_stop_time = -1;
 
         while (stop_time != old_stop_time)
@@ -541,7 +542,7 @@ augmented_task_t *dequeue(queue_dfs_t *queue)
 }
 
 // Place the first element to be ready on the front TODO ADD STOP TIME
-int place_first_element_ready(queue_dfs_t *queue, int cpu)
+int place_first_element_ready(queue_dfs_t *queue, int cpu, int current_time, int stop_time)
 {
     assert(queue->first != queue->last);
 
@@ -551,7 +552,7 @@ int place_first_element_ready(queue_dfs_t *queue, int cpu)
     while (current != queue->last)
     {
         int this_time = get_elem_ready_time(queue->elems[current], cpu);
-        if (min_ready_time > this_time)
+        if (min_ready_time > this_time && queue->elems[current]->task->executionTime + current_time < stop_time)
         {
             min_ready_time = this_time;
             min_index = current;
@@ -559,6 +560,9 @@ int place_first_element_ready(queue_dfs_t *queue, int cpu)
         current += 1;
         if (current == tasksPerGraph)
             current = 0;
+    }
+    if(min_index == -1) {
+        return -1;
     }
     augmented_task_t *tmp = queue->elems[queue->first];
     queue->elems[queue->first] = queue->elems[min_index];
@@ -705,6 +709,7 @@ int add_cpu_to_first_decision(const decision_list_t *list)
             }
 
             if(cpu_underused && !copy->aug_dag->is_completed) {
+                printf("1\n");
                 list->max_start_time[dag_to_exec] = INT_MAX;
                 return -1;
             }
@@ -718,11 +723,12 @@ int add_cpu_to_first_decision(const decision_list_t *list)
     list->cpu_allocated[dag_to_exec] += 1;
 
     int time_to_completion = compute_serial_completion_time(copy->aug_dag);
-    int new_time = copy->aug_dag->dag->deadlineTime - (int)(1.1 * list->current_time) - time_to_completion;
+    int new_time = copy->aug_dag->dag->deadlineTime - (int)(1.0 * list->current_time) - time_to_completion;
     list->max_start_time[dag_to_exec] = new_time;
 
     if (copy->aug_dag->is_completed || new_time == last_time || cpu_underused)
     {
+        printf("2\n");
         list->max_start_time[dag_to_exec] = INT_MAX;
         if (copy->aug_dag->is_completed)
         {
@@ -759,7 +765,7 @@ void print_decision_list(decision_list_t *list)
     printf("-> start %i end %i size %i : \n", list->current_time, list->stop_time, list->size);
     for (int i = 0; i < list->size; i++)
     {
-        printf("(%i) : [%i, %i, {", list->sch_dag[i]->aug_dag->dag->dagID, list->remaining_time[i], list->max_start_time[i]);
+        printf("(%i) : [(r) %i, (m) %i, (d) %i {", list->sch_dag[i]->aug_dag->dag->dagID, list->remaining_time[i], list->max_start_time[i], list->sch_dag[i]->aug_dag->dag->deadlineTime);
         for (int j = 0; j < numberOfProcessors; j++)
         {
             if (list->cpu_usage[i][j] >= 0.0f)
@@ -934,8 +940,8 @@ bool multi_dfs(int _allocated_cpus[numberOfProcessors], queue_dfs_t *queue, int 
                     continue;
                 }
 
-                int min_ready_time = place_first_element_ready(queue, which_cpu);
-                if (min_ready_time > cpu_times[which_cpu])
+                int min_ready_time = place_first_element_ready(queue, which_cpu, cpu_times[which_cpu], stop_time);
+                if (min_ready_time == -1 || min_ready_time > cpu_times[which_cpu])
                 {
                     cpu_times[which_cpu] = min_ready_time;
                     continue;
