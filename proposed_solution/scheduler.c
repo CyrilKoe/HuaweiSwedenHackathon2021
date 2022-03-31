@@ -113,7 +113,7 @@ int compute_serial_completion_time(augmented_dag_t *aug_dag);
 int compute_cpu_running_time(augmented_dag_t *aug_dag, int cpu, int start_time, int stop_time);
 decision_list_t *create_decision_list(int size);
 void remove_decision_list(decision_list_t *list);
-void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag, int start_time);
+void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag, int start_time, int stop_time);
 int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* which_dag, int start_time, int stop_time, cpus_allocated_t *cpus_allocated);
 void sort_decision_list(decision_list_t *list);
 void print_decision_list(decision_list_t *list, int start_time, int stop_time);
@@ -167,12 +167,6 @@ void scheduler()
 
     while (stop_time < INT_MAX)
     {
-        /*stop_time = start_time + 2 * max_task_time;
-        if(stop_time > dag_arrivals[arrival_count])
-            stop_time = dag_arrivals[arrival_count];*/
-
-
-        
 
         // --------- PREPARE LIST DAGS ---------------------
         int n_dags_to_schedule = 0;
@@ -208,9 +202,10 @@ void scheduler()
         }
 
         stop_time = dag_arrivals[arrival_count];
-        if(stop_time < start_time + max_task_time * 2) {
+        
+        /*if(stop_time < start_time + max_task_time * 2) {
             stop_time = start_time + max_task_time * 2; //dag_arrivals[arrival_count];
-        }
+        }*/
 
         //for every subdivision of [new_start_time, stop_time]
         bool has_executed = true;
@@ -243,7 +238,7 @@ void scheduler()
                 {
                     continue;
                 }
-                add_to_decision_list(decision_list, scheduling_dags[i], start_time);
+                add_to_decision_list(decision_list, scheduling_dags[i], start_time, stop_time);
             }
 
             // 
@@ -600,11 +595,11 @@ void remove_decision_list(decision_list_t *list)
     free(list);
 }
 
-int compute_margin(int deadline, int current_time, int completion_time) {
-    return deadline - current_time - completion_time + (int) ((float)(deadline - current_time) * 0.2f);
+int compute_margin(int deadline, int current_time, int stop_time, int completion_time, int n_cpus) {
+    return deadline - stop_time - completion_time/n_cpus + (int) ((float)(deadline - current_time) * 0.2f);
 }
 
-void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag, int start_time)
+void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag, int start_time, int stop_time)
 {
     for (int i = 0; i < list->size; i++)
     {
@@ -612,7 +607,7 @@ void add_to_decision_list(decision_list_t *list, scheduling_dag_t *original_dag,
         {
             list->sch_dag[i] = original_dag;
             // list->cpu_allocated[i] = 0;
-            list->max_start_time[i] = compute_margin(original_dag->aug_dag->dag->deadlineTime, start_time, compute_serial_completion_time(original_dag->aug_dag));
+            list->max_start_time[i] = compute_margin(original_dag->aug_dag->dag->deadlineTime, start_time, stop_time, compute_serial_completion_time(original_dag->aug_dag), 1);
             list->remaining_time[i] = compute_serial_completion_time(original_dag->aug_dag);
             break;
         }
@@ -627,21 +622,16 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
 
 
     int dag_to_exec = -1;
-    // First find a dag that needs to finish now
-    for (int i = 0; i < list->size; i++) {
-        if (list->sch_dag[i]->aug_dag->dag->deadlineTime < stop_time && list->remaining_time[i] > 0) {
-            dag_to_exec = i;
-            break;
-        }
-    }
+
+    int min_deadline = INT_MAX; 
     // Then a dag that has a negative margin
     if (dag_to_exec == -1) {
         for (int i = 0; i < list->size; i++) // Find not respected deadline
         {
-            if (list->max_start_time[i] < 0)
+            if (list->max_start_time[i] < 0 && list->sch_dag[i]->aug_dag->dag->deadlineTime < min_deadline && list->remaining_time[i] > 0)
             {
                 dag_to_exec = i;
-                break;
+                min_deadline = list->sch_dag[i]->aug_dag->dag->deadlineTime; 
             }
         }
     }
@@ -658,7 +648,7 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
                     break;
                 }
             }
-            if (!found) {
+            if (!found && list->remaining_time[i] > 0) {
                 dag_to_exec = i;
                 break;
             }
@@ -676,12 +666,14 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
 
 
     // Allocate CPUs
+    int n_cpus = 0;
     int cpus[numberOfProcessors];
     for (int i = 0; i < numberOfProcessors; i++)
     {
         if (cpus_allocated->dag_idx[i] == *which_dag || which_cpu == i)
         {
             cpus[i] = i;
+            n_cpus++;
         }
         else
         {
@@ -739,7 +731,7 @@ int add_cpu_to_first_decision(const decision_list_t *list, int which_cpu, int* w
     //list->cpu_allocated[dag_to_exec] += 1;
 
     int time_to_completion = compute_serial_completion_time(copy->aug_dag);
-    int new_time = compute_margin(copy->aug_dag->dag->deadlineTime, start_time, time_to_completion);
+    int new_time = compute_margin(copy->aug_dag->dag->deadlineTime, start_time, stop_time, time_to_completion, n_cpus);
     list->max_start_time[dag_to_exec] = new_time;
 
     if (copy->aug_dag->is_completed || new_time == last_time || cpu_underused)
