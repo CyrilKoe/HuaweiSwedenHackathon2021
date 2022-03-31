@@ -20,7 +20,7 @@ $(OBJ_DIR)/%.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDE) -c $< -o $@ $(LDFLAGS)
 
 $(APP_DIR)/$(TARGET): $(OBJECTS)
-	ln -s ../testcases testcases || true
+	ln -s ../old_testcases testcases || true
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -o $(APP_DIR)/$(TARGET) $^ $(LDFLAGS)
 
@@ -43,10 +43,7 @@ run: all
 	$(APP_DIR)/$(TARGET) 7
 	$(APP_DIR)/$(TARGET) 8
 	$(APP_DIR)/$(TARGET) 9
-	$(APP_DIR)/$(TARGET) 10
-	$(APP_DIR)/$(TARGET) 11
-	$(APP_DIR)/$(TARGET) 12
-	
+
 
 clean:
 	-@rm -rvf $(OBJ_DIR)/*
